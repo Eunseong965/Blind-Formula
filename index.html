@@ -20,6 +20,15 @@
   .screen { display: none; min-height: 100vh; padding: 2rem 1rem; max-width: 480px; margin: 0 auto; }
   .screen.active { display: flex; flex-direction: column; }
 
+  /* 로비 배경: 떠다니는 숫자 캔버스 */
+  #lobby-bg {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    z-index: 0; pointer-events: none; display: none;
+  }
+  #lobby-bg.show { display: block; }
+  #screen-lobby { position: relative; z-index: 1; }
+  #screen-lobby > * { position: relative; z-index: 1; }
+
   h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; color: #f0eeff; }
   h2 { font-size: 17px; font-weight: 600; color: #c8c4e0; margin-bottom: 12px; }
 
@@ -174,6 +183,8 @@
 </style>
 </head>
 <body>
+
+<canvas id="lobby-bg"></canvas>
 
 <!-- 규칙 모달 (공통) -->
 <div class="modal-overlay" id="modal-rules">
@@ -494,6 +505,12 @@ function generateCode() {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
+  // 로비에서만 떠다니는 숫자 배경 표시
+  const bg = document.getElementById('lobby-bg');
+  if (bg) {
+    if (id === 'lobby') { bg.classList.add('show'); startLobbyBg(); }
+    else { bg.classList.remove('show'); stopLobbyBg(); }
+  }
 }
 
 function showLobbyMsg(text, type = 'error') {
@@ -1316,6 +1333,79 @@ document.getElementById('modal-restart-confirm').addEventListener('click', () =>
   closeRestart();
   resetToLobby(true); // 게임 중 나감 → 상대에게 알림
 });
+
+// ===== 로비 배경: 떠다니는 숫자/기호 =====
+let lobbyBgRAF = null;
+let lobbyBgParticles = [];
+const LOBBY_SYMBOLS = ['+', '−', '×', '÷', '2', '1', '−2', '−1', '=', '?'];
+
+function initLobbyParticles(w, h) {
+  const count = Math.min(40, Math.floor(w * h / 22000));
+  lobbyBgParticles = [];
+  for (let i = 0; i < count; i++) {
+    lobbyBgParticles.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      sym: LOBBY_SYMBOLS[Math.floor(Math.random() * LOBBY_SYMBOLS.length)],
+      size: 14 + Math.random() * 34,
+      speed: 0.15 + Math.random() * 0.5,
+      drift: (Math.random() - 0.5) * 0.3,
+      alpha: 0.04 + Math.random() * 0.12,
+      rot: (Math.random() - 0.5) * 0.4,
+    });
+  }
+}
+
+function startLobbyBg() {
+  const canvas = document.getElementById('lobby-bg');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initLobbyParticles(canvas.width, canvas.height);
+  }
+  if (!lobbyBgRAF) {
+    resize();
+    canvas._resizeHandler = resize;
+    window.addEventListener('resize', resize);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of lobbyBgParticles) {
+      p.y -= p.speed;
+      p.x += p.drift;
+      if (p.y < -50) { p.y = canvas.height + 40; p.x = Math.random() * canvas.width; }
+      if (p.x < -50) p.x = canvas.width + 40;
+      if (p.x > canvas.width + 50) p.x = -40;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.font = `700 ${p.size}px 'Pretendard', sans-serif`;
+      ctx.fillStyle = `rgba(167, 139, 250, ${p.alpha})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(p.sym, 0, 0);
+      ctx.restore();
+    }
+    lobbyBgRAF = requestAnimationFrame(draw);
+  }
+  if (!lobbyBgRAF) draw();
+}
+
+function stopLobbyBg() {
+  if (lobbyBgRAF) { cancelAnimationFrame(lobbyBgRAF); lobbyBgRAF = null; }
+  const canvas = document.getElementById('lobby-bg');
+  if (canvas && canvas._resizeHandler) {
+    window.removeEventListener('resize', canvas._resizeHandler);
+    canvas._resizeHandler = null;
+  }
+}
+
+// 초기 로딩 시 로비가 활성 상태이므로 배경 시작
+document.getElementById('lobby-bg').classList.add('show');
+startLobbyBg();
 </script>
 </body>
 </html>
