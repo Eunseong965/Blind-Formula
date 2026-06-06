@@ -85,13 +85,15 @@
   .hcard {
     width: 48px; height: 56px; border-radius: 9px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 15px; font-weight: 700; cursor: pointer;
-    border: 1px solid #2a2740; background: #13111f; color: #c8c4e0;
+    font-size: 17px; font-weight: 700; cursor: pointer;
+    border: 2px solid #2a2740; background: #1a1826; color: #ffffff;
     transition: all 0.12s; user-select: none;
   }
-  .hcard:hover:not(.used) { transform: translateY(-3px); border-color: #7c6fcd; }
-  .hcard.selected { border: 2px solid #a78bfa; background: #221f3a; color: #c4b8ff; transform: translateY(-4px); }
-  .hcard.used { opacity: 0.2; cursor: default; pointer-events: none; }
+  .hcard.num-card { background: #1a2740; border-color: #3a5a8a; color: #93c5fd; }
+  .hcard.op-card { background: #2a1a10; border-color: #8a5a3a; color: #fcd9b8; }
+  .hcard:hover:not(.used) { transform: translateY(-3px); border-color: #a78bfa; box-shadow: 0 4px 12px #0008; }
+  .hcard.selected { border: 2px solid #34d399; background: #14302a; color: #6ee7b7; transform: translateY(-4px); box-shadow: 0 0 0 3px #34d39944; }
+  .hcard.used { opacity: 0.15; cursor: default; pointer-events: none; filter: grayscale(1); }
 
   .msg { padding: 10px 14px; border-radius: 9px; font-size: 13px; margin-bottom: 10px; line-height: 1.5; }
   .msg.info { background: #1e1c30; color: #8b88b0; }
@@ -231,10 +233,7 @@
     <div class="formula-board" style="margin-bottom:0;">
       <div style="font-size:12px; color:#4a4760; margin-bottom: 8px;">공개된 수식</div>
       <div class="reveal-formula" id="r-formula"></div>
-      <div class="reveal-scores">
-        <div class="reveal-score-box p1"><span id="r-p1-name">P1</span>: <span id="r-p1-score">0</span>점</div>
-        <div class="reveal-score-box p2"><span id="r-p2-name">P2</span>: <span id="r-p2-score">0</span>점</div>
-      </div>
+      <div id="r-score-area"></div>
     </div>
   </div>
 
@@ -461,15 +460,26 @@ function renderGame(data) {
   const p1total = (p1s[0] ?? 0) + (p1s[2] ?? 0);
   const p2total = (p2s[1] ?? 0) + (p2s[3] ?? 0);
 
+  const owner = data.roundOwner;
+
   document.getElementById('g-p1-name').textContent = data.p1Name + (myRole === 'p1' ? ' (나)' : '');
   document.getElementById('g-p2-name').textContent = data.p2Name + (myRole === 'p2' ? ' (나)' : '');
   document.getElementById('g-p1-total').textContent = p1total;
   document.getElementById('g-p2-total').textContent = p2total;
-  document.getElementById('g-p1-detail').textContent = `R1·R3 담당`;
-  document.getElementById('g-p2-detail').textContent = `R2·R4 담당`;
+  document.getElementById('g-p1-detail').textContent = owner === 'p1' ? '이번 라운드 득점자' : 'R1·R3 담당';
+  document.getElementById('g-p2-detail').textContent = owner === 'p2' ? '이번 라운드 득점자' : 'R2·R4 담당';
+
+  // 현재 라운드 주인 점수판만 강조, 비주인은 흐리게
+  const p1box = document.querySelector('.score-box.p1');
+  const p2box = document.querySelector('.score-box.p2');
+  if (p1box && p2box) {
+    p1box.style.opacity = owner === 'p1' ? '1' : '0.35';
+    p2box.style.opacity = owner === 'p2' ? '1' : '0.35';
+    p1box.style.borderColor = owner === 'p1' ? '#60a5fa' : '#2a2740';
+    p2box.style.borderColor = owner === 'p2' ? '#fb923c' : '#2a2740';
+  }
 
   // 라운드 주인 안내
-  const owner = data.roundOwner;
   const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
   const iAmOwner = owner === myRole;
 
@@ -545,7 +555,8 @@ function renderGame(data) {
   handEl.innerHTML = '';
   CARDS.forEach((card, idx) => {
     const div = document.createElement('div');
-    div.className = 'hcard' + (myUsed[idx] ? ' used' : '') + (localSelectedCardIdx === idx ? ' selected' : '');
+    const typeCls = isOp(card) ? ' op-card' : ' num-card';
+    div.className = 'hcard' + typeCls + (myUsed[idx] ? ' used' : '') + (localSelectedCardIdx === idx ? ' selected' : '');
     div.textContent = cardLabel(card);
     if (!myUsed[idx] && isMyTurn) {
       div.addEventListener('click', () => {
@@ -641,10 +652,9 @@ function renderReveal(data) {
   document.getElementById('r-formula').textContent = `${formulaStr} = ${score}`;
   const owner = data.roundOwner;
   const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
-  document.getElementById('r-p1-name').textContent = data.p1Name;
-  document.getElementById('r-p2-name').textContent = data.p2Name;
-  document.getElementById('r-p1-score').textContent = owner === 'p1' ? `+${score}` : '0 (방어)';
-  document.getElementById('r-p2-score').textContent = owner === 'p2' ? `+${score}` : '0 (방어)';
+  const boxClass = owner === 'p1' ? 'p1' : 'p2';
+  document.getElementById('r-score-area').innerHTML =
+    `<div class="reveal-score-box ${boxClass}" style="margin-top: 12px; padding: 14px; font-size: 15px;">${ownerName} +${score}점</div>`;
 
   renderHistory('r-history', data.history);
 
