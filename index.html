@@ -405,8 +405,29 @@ function startGameListener() {
   });
 }
 
-function handleGameState(data) {
-  if (data.phase === 'waiting') return;
+function normalizeData(data) {
+  // Firebase는 null 포함 배열을 객체로 저장함 — 배열로 복원
+  const toArr = (v, len, def) => {
+    if (!v) return Array(len).fill(def);
+    if (Array.isArray(v)) return v;
+    const arr = Array(len).fill(def);
+    Object.keys(v).forEach(k => { arr[parseInt(k)] = v[k]; });
+    return arr;
+  };
+  data.slots = toArr(data.slots, 5, null);
+  data.slotOwner = toArr(data.slotOwner, 5, null);
+  data.p1Used = toArr(data.p1Used, 10, false);
+  data.p2Used = toArr(data.p2Used, 10, false);
+  data.history = data.history ? (Array.isArray(data.history) ? data.history : Object.values(data.history)) : [];
+  if (!data.scores) data.scores = { p1: [null,null,null,null], p2: [null,null,null,null] };
+  data.scores.p1 = toArr(data.scores.p1, 4, null);
+  data.scores.p2 = toArr(data.scores.p2, 4, null);
+  return data;
+}
+
+function handleGameState(rawData) {
+  if (rawData.phase === 'waiting') return;
+  const data = normalizeData(rawData);
 
   if (data.phase === 'playing') {
     showScreen('game');
@@ -424,14 +445,14 @@ function renderGame(data) {
   document.getElementById('g-round').textContent = data.round;
 
   // 점수
-  const p1scores = data.scores.p1.filter(v => v !== null);
-  const p2scores = data.scores.p2.filter(v => v !== null);
-  const p1total = p1scores.reduce((a,b) => a+b, 0);
-  const p2total = p2scores.reduce((a,b) => a+b, 0);
-  const p1odd = (data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0);
-  const p1even = (data.scores.p1[1] ?? 0) + (data.scores.p1[3] ?? 0);
-  const p2odd = (data.scores.p2[0] ?? 0) + (data.scores.p2[2] ?? 0);
-  const p2even = (data.scores.p2[1] ?? 0) + (data.scores.p2[3] ?? 0);
+  const p1s = data.scores.p1;
+  const p2s = data.scores.p2;
+  const p1total = p1s.reduce((a,b) => a + (b ?? 0), 0);
+  const p2total = p2s.reduce((a,b) => a + (b ?? 0), 0);
+  const p1odd = (p1s[0] ?? 0) + (p1s[2] ?? 0);
+  const p1even = (p1s[1] ?? 0) + (p1s[3] ?? 0);
+  const p2odd = (p2s[0] ?? 0) + (p2s[2] ?? 0);
+  const p2even = (p2s[1] ?? 0) + (p2s[3] ?? 0);
 
   document.getElementById('g-p1-name').textContent = data.p1Name + (myRole === 'p1' ? ' (나)' : '');
   document.getElementById('g-p2-name').textContent = data.p2Name + (myRole === 'p2' ? ' (나)' : '');
@@ -580,6 +601,7 @@ async function placeCard(slotIdx, data) {
 }
 
 function renderReveal(data) {
+  data = normalizeData(data);
   document.getElementById('r-round').textContent = data.round;
   const slots = data.slots;
   const formulaStr = `${cardLabel(slots[0])} ${slots[1]} ${cardLabel(slots[2])} ${slots[3]} ${cardLabel(slots[4])}`;
@@ -632,6 +654,7 @@ function renderReveal(data) {
 }
 
 function renderEnd(data) {
+  data = normalizeData(data);
   const p1odd = (data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0);
   const p1even = (data.scores.p1[1] ?? 0) + (data.scores.p1[3] ?? 0);
   const p2odd = (data.scores.p2[0] ?? 0) + (data.scores.p2[2] ?? 0);
