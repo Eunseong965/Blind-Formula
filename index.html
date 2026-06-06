@@ -65,16 +65,16 @@
   .slot {
     width: 52px; height: 58px; border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 17px; font-weight: 700; border: 1.5px dashed #2a2740;
-    background: #1a1826; color: #4a4760; cursor: pointer;
+    font-size: 17px; font-weight: 700; border: 2px dashed #3a3658;
+    background: #100e1a; color: #56527a; cursor: pointer;
     transition: all 0.15s; position: relative;
   }
-  .slot.num { background: #1e1c30; }
-  .slot.op { background: #1c1e30; }
-  .slot.filled-mine { border-style: solid; border-color: #7c6fcd; background: #221f3a; color: #c4b8ff; }
-  .slot.filled-blind { border-style: solid; border-color: #2a2740; background: #1a1826; color: #3a3550; }
-  .slot.active-target { border-color: #34d399; border-style: solid; box-shadow: 0 0 0 2px #34d39933; }
-  .slot.empty-hint { color: #3a3550; font-size: 13px; }
+  .slot.num { background: #100e1a; }
+  .slot.op { background: #14111f; }
+  .slot.filled-mine { border-style: solid; border-width: 2px; border-color: #a78bfa; background: #3a2f6e; color: #ffffff; box-shadow: 0 0 0 1px #a78bfa44; }
+  .slot.filled-blind { border-style: solid; border-width: 2px; border-color: #5a4a8a; background: #2a2348; color: #8b7fc0; }
+  .slot.active-target { border-color: #34d399; border-style: solid; border-width: 2px; background: #14211c; box-shadow: 0 0 0 3px #34d39944; }
+  .slot.empty-hint { color: #56527a; font-size: 15px; }
 
   .eq { font-size: 20px; color: #4a4760; padding: 0 4px; }
   .result-preview { font-size: 20px; font-weight: 700; min-width: 44px; text-align: center; color: #a78bfa; }
@@ -540,6 +540,7 @@ function renderGame(data) {
 
   // 손패
   const myUsed = myRole === 'p1' ? data.p1Used : data.p2Used;
+  const remaining = myUsed.filter(u => !u).length;
   const handEl = document.getElementById('g-hand');
   handEl.innerHTML = '';
   CARDS.forEach((card, idx) => {
@@ -558,6 +559,9 @@ function renderGame(data) {
     }
     handEl.appendChild(div);
   });
+
+  const handLabel = document.querySelector('#g-hand-section > div > div:first-child');
+  if (handLabel) handLabel.textContent = `내 손패 (남은 카드 ${remaining}장)`;
 
   const selLabel = document.getElementById('g-selected-label');
   selLabel.textContent = localSelectedCard !== null ? `선택: ${cardLabel(localSelectedCard)}` : '';
@@ -658,7 +662,7 @@ function renderReveal(data) {
 
       if (bothAck) {
         if (data.round < NUM_ROUNDS) {
-          // 다음 라운드: 주인 교체 (R1·R3=p1, R2·R4=p2)
+          // 다음 라운드: 주인 교체 (R1·R3=p1, R2·R4=p2). 사용한 카드는 폐기되어 누적 유지됨
           const nextRound = data.round + 1;
           const nextOwner = nextRound % 2 === 1 ? 'p1' : 'p2';
           await update(roomRef, {
@@ -667,8 +671,6 @@ function renderReveal(data) {
             slots: ['','','','',''],
             slotOwner: ['','','','',''],
             slotCount: 0,
-            p1Used: [false,false,false,false,false,false,false,false,false,false],
-            p2Used: [false,false,false,false,false,false,false,false,false,false],
             roundOwner: nextOwner,
             currentTurn: nextOwner,
             revealAck: { p1: false, p2: false },
