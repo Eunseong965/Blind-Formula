@@ -360,6 +360,7 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     phase: 'waiting',
     round: 1,
     currentTurn: 'p1',
+    roundOwner: 'p1',
     slots: [null, null, null, null, null],
     slotOwner: [null, null, null, null, null],
     slotCount: 0,
@@ -452,22 +453,23 @@ function handleGameState(rawData) {
 function renderGame(data) {
   document.getElementById('g-round').textContent = data.round;
 
-  // 점수
+  // 점수 — p1은 R1·R3, p2는 R2·R4에서만 득점
   const p1s = data.scores.p1;
   const p2s = data.scores.p2;
-  const p1total = p1s.reduce((a,b) => a + (b ?? 0), 0);
-  const p2total = p2s.reduce((a,b) => a + (b ?? 0), 0);
-  const p1odd = (p1s[0] ?? 0) + (p1s[2] ?? 0);
-  const p1even = (p1s[1] ?? 0) + (p1s[3] ?? 0);
-  const p2odd = (p2s[0] ?? 0) + (p2s[2] ?? 0);
-  const p2even = (p2s[1] ?? 0) + (p2s[3] ?? 0);
+  const p1total = (p1s[0] ?? 0) + (p1s[2] ?? 0);
+  const p2total = (p2s[1] ?? 0) + (p2s[3] ?? 0);
 
   document.getElementById('g-p1-name').textContent = data.p1Name + (myRole === 'p1' ? ' (나)' : '');
   document.getElementById('g-p2-name').textContent = data.p2Name + (myRole === 'p2' ? ' (나)' : '');
   document.getElementById('g-p1-total').textContent = p1total;
   document.getElementById('g-p2-total').textContent = p2total;
-  document.getElementById('g-p1-detail').textContent = `홀 ${p1odd} / 짝 ${p1even}`;
-  document.getElementById('g-p2-detail').textContent = `홀 ${p2odd} / 짝 ${p2even}`;
+  document.getElementById('g-p1-detail').textContent = `R1·R3 담당`;
+  document.getElementById('g-p2-detail').textContent = `R2·R4 담당`;
+
+  // 라운드 주인 안내
+  const owner = data.roundOwner;
+  const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
+  const iAmOwner = owner === myRole;
 
   // 턴 표시
   const isMyTurn = data.currentTurn === myRole;
@@ -477,9 +479,15 @@ function renderGame(data) {
     ? `<span class="tag tag-green">내 차례</span>`
     : `<span class="tag tag-purple">${turnName} 차례</span>`;
 
-  // 메시지
-  if (isMyTurn) showGameMsg('카드를 선택한 후 빈 자리를 클릭하세요.', 'success');
-  else showGameMsg(`${turnName}이(가) 카드를 놓는 중...`, 'info');
+  // 메시지 — 주인 여부에 따라 공격/방어 안내
+  let roleMsg = iAmOwner
+    ? `이번 라운드는 <strong>내 점수 라운드</strong> — 결과값을 최대한 크게!`
+    : `이번 라운드는 <strong>${ownerName}</strong>의 점수 라운드 — 결과값을 막아라!`;
+  if (isMyTurn) {
+    showGameMsg(`${roleMsg}<br>카드를 선택한 후 빈 자리를 클릭하세요.`, iAmOwner ? 'success' : 'warn');
+  } else {
+    showGameMsg(`${roleMsg}<br>${turnName}이(가) 카드를 놓는 중...`, 'info');
+  }
 
   // 슬롯 렌더
   const slots = data.slots || [null,null,null,null,null];
@@ -600,11 +608,12 @@ async function placeCard(slotIdx) {
     const result = evalFormula(newSlots);
     const score = result === null ? 0 : result;
     const rIdx = data.round - 1;
+    const owner = data.roundOwner;
     const newScores = JSON.parse(JSON.stringify(data.scores));
-    newScores.p1[rIdx] = score;
-    newScores.p2[rIdx] = score;
+    newScores[owner][rIdx] = score;
     const formulaStr = `${cardLabel(newSlots[0])} ${newSlots[1]} ${cardLabel(newSlots[2])} ${newSlots[3]} ${cardLabel(newSlots[4])} = ${score}`;
-    const newHistory = [...(data.history || []), { round: data.round, formula: formulaStr, score }];
+    const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
+    const newHistory = [...(data.history || []), { round: data.round, formula: formulaStr, score, owner, ownerName }];
     updateData.scores = newScores;
     updateData.history = newHistory;
     updateData.phase = 'reveal';
@@ -623,10 +632,12 @@ function renderReveal(data) {
   const score = result === null ? 0 : result;
 
   document.getElementById('r-formula').textContent = `${formulaStr} = ${score}`;
+  const owner = data.roundOwner;
+  const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
   document.getElementById('r-p1-name').textContent = data.p1Name;
   document.getElementById('r-p2-name').textContent = data.p2Name;
-  document.getElementById('r-p1-score').textContent = score;
-  document.getElementById('r-p2-score').textContent = score;
+  document.getElementById('r-p1-score').textContent = owner === 'p1' ? `+${score}` : '0 (방어)';
+  document.getElementById('r-p2-score').textContent = owner === 'p2' ? `+${score}` : '0 (방어)';
 
   renderHistory('r-history', data.history);
 
@@ -644,17 +655,19 @@ function renderReveal(data) {
 
       if (bothAck) {
         if (data.round < NUM_ROUNDS) {
-          // 다음 라운드 — 선공 교체
-          const nextFirst = data.currentTurn;
+          // 다음 라운드: 주인 교체 (R1·R3=p1, R2·R4=p2)
+          const nextRound = data.round + 1;
+          const nextOwner = nextRound % 2 === 1 ? 'p1' : 'p2';
           await update(roomRef, {
             phase: 'playing',
-            round: data.round + 1,
+            round: nextRound,
             slots: [null,null,null,null,null],
             slotOwner: [null,null,null,null,null],
             slotCount: 0,
             p1Used: [false,false,false,false,false,false,false,false,false,false],
             p2Used: [false,false,false,false,false,false,false,false,false,false],
-            currentTurn: data.round % 2 === 1 ? 'p2' : 'p1',
+            roundOwner: nextOwner,
+            currentTurn: nextOwner,
             revealAck: { p1: false, p2: false },
           });
         } else {
@@ -669,38 +682,33 @@ function renderReveal(data) {
 
 function renderEnd(data) {
   data = normalizeData(data);
-  const p1odd = (data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0);
-  const p1even = (data.scores.p1[1] ?? 0) + (data.scores.p1[3] ?? 0);
-  const p2odd = (data.scores.p2[0] ?? 0) + (data.scores.p2[2] ?? 0);
-  const p2even = (data.scores.p2[1] ?? 0) + (data.scores.p2[3] ?? 0);
-  const p1total = p1odd + p1even;
-  const p2total = p2odd + p2even;
-
-  const oddWin = p1odd > p2odd ? 'p1' : p1odd < p2odd ? 'p2' : 'tie';
-  const evenWin = p1even > p2even ? 'p1' : p1even < p2even ? 'p2' : 'tie';
-  const p1sets = (oddWin === 'p1' ? 1 : 0) + (evenWin === 'p1' ? 1 : 0);
-  const p2sets = (oddWin === 'p2' ? 1 : 0) + (evenWin === 'p2' ? 1 : 0);
+  // 주인에게만 점수가 들어가므로: p1은 R1+R3, p2는 R2+R4에서만 득점
+  const p1total = (data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0);
+  const p2total = (data.scores.p2[1] ?? 0) + (data.scores.p2[3] ?? 0);
 
   const winnerEl = document.getElementById('end-winner');
-  if (p1sets > p2sets) {
-    winnerEl.innerHTML = `<div class="winner-box"><div class="winner-title">🏆 ${data.p1Name} 승리!</div><div class="winner-sub">${p1sets}세트 vs ${p2sets}세트</div></div>`;
-  } else if (p2sets > p1sets) {
-    winnerEl.innerHTML = `<div class="winner-box" style="background:#2e1a1a; border-color: #fb923c44;"><div class="winner-title" style="color:#fb923c;">🏆 ${data.p2Name} 승리!</div><div class="winner-sub" style="color:#d97706;">${p2sets}세트 vs ${p1sets}세트</div></div>`;
+  if (p1total > p2total) {
+    winnerEl.innerHTML = `<div class="winner-box"><div class="winner-title">🏆 ${data.p1Name} 승리!</div><div class="winner-sub">${p1total}점 vs ${p2total}점</div></div>`;
+  } else if (p2total > p1total) {
+    winnerEl.innerHTML = `<div class="winner-box" style="background:#2e1a1a; border-color: #fb923c44;"><div class="winner-title" style="color:#fb923c;">🏆 ${data.p2Name} 승리!</div><div class="winner-sub" style="color:#d97706;">${p2total}점 vs ${p1total}점</div></div>`;
   } else {
-    winnerEl.innerHTML = `<div class="tie-box"><div class="tie-title">무승부!</div></div>`;
+    winnerEl.innerHTML = `<div class="tie-box"><div class="tie-title">무승부!</div><div class="winner-sub" style="color:#a87a10;">${p1total}점 vs ${p2total}점</div></div>`;
   }
+
+  const r1 = data.scores.p1[0] ?? 0;
+  const r3 = data.scores.p1[2] ?? 0;
+  const r2 = data.scores.p2[1] ?? 0;
+  const r4 = data.scores.p2[3] ?? 0;
 
   document.getElementById('e-p1-name').textContent = data.p1Name;
   document.getElementById('e-p2-name').textContent = data.p2Name;
   document.getElementById('e-p1-total').textContent = p1total;
   document.getElementById('e-p2-total').textContent = p2total;
-  document.getElementById('e-p1-detail').textContent = `홀수 ${p1odd} / 짝수 ${p1even}`;
-  document.getElementById('e-p2-detail').textContent = `홀수 ${p2odd} / 짝수 ${p2even}`;
+  document.getElementById('e-p1-detail').textContent = `R1 ${r1} + R3 ${r3}`;
+  document.getElementById('e-p2-detail').textContent = `R2 ${r2} + R4 ${r4}`;
 
-  const oddWinner = oddWin === 'p1' ? data.p1Name : oddWin === 'p2' ? data.p2Name : '무승부';
-  const evenWinner = evenWin === 'p1' ? data.p1Name : evenWin === 'p2' ? data.p2Name : '무승부';
   document.getElementById('e-set-result').innerHTML =
-    `홀수 세트 (R1+R3): <strong>${oddWinner}</strong> (${p1odd} vs ${p2odd}) &nbsp;|&nbsp; 짝수 세트 (R2+R4): <strong>${evenWinner}</strong> (${p1even} vs ${p2even})`;
+    `<strong>${data.p1Name}</strong>는 R1·R3에서 득점, <strong>${data.p2Name}</strong>는 R2·R4에서 득점. 각자 자기 라운드 점수 합으로 승부합니다.`;
 
   renderHistory('e-history', data.history);
 }
@@ -709,7 +717,8 @@ function renderHistory(elId, history) {
   if (!history || history.length === 0) { document.getElementById(elId).innerHTML = ''; return; }
   let html = '<div class="history"><div class="history-title">라운드 기록</div>';
   history.forEach(h => {
-    html += `<div class="history-row"><span>R${h.round}</span><span>${h.formula}</span></div>`;
+    const ownerLabel = h.ownerName ? ` <span style="color:#a78bfa;">(${h.ownerName} +${h.score})</span>` : '';
+    html += `<div class="history-row"><span>R${h.round}</span><span>${h.formula}${ownerLabel}</span></div>`;
   });
   html += '</div>';
   document.getElementById(elId).innerHTML = html;
