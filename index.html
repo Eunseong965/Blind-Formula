@@ -44,8 +44,6 @@
   .room-hint { font-size: 12px; color: #6b6880; text-align: center; margin-top: 4px; }
 
   .tag { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-  .tag-blue { background: #1e3a5f; color: #60a5fa; }
-  .tag-orange { background: #4a2010; color: #fb923c; }
   .tag-green { background: #0d3320; color: #34d399; }
   .tag-purple { background: #2e1f5e; color: #a78bfa; }
 
@@ -101,12 +99,6 @@
   .msg.warn { background: #2e2010; color: #fbbf24; }
   .msg.error { background: #2a1010; color: #f87171; }
 
-  .turn-indicator { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .dot.p1 { background: #60a5fa; }
-  .dot.p2 { background: #fb923c; }
-  .dot.waiting { background: #4a4760; }
-
   .history { background: #13111f; border-radius: 10px; padding: 10px 14px; margin-bottom: 1rem; }
   .history-title { font-size: 11px; color: #4a4760; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
   .history-row { display: flex; justify-content: space-between; font-size: 12px; color: #6b6880; padding: 4px 0; border-bottom: 1px solid #1a1826; }
@@ -132,9 +124,6 @@
   .flex-row { display: flex; gap: 8px; }
   .flex-1 { flex: 1; }
 
-  .reveal-formula { font-size: 22px; font-weight: 700; text-align: center; letter-spacing: 3px; color: #f0eeff; padding: 1rem 0; }
-  .reveal-result { text-align: center; font-size: 14px; color: #6b6880; }
-  .reveal-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   .reveal-score-box { border-radius: 9px; padding: 10px; text-align: center; font-size: 13px; font-weight: 600; }
   .reveal-score-box.p1 { background: #1e3a5f; color: #60a5fa; }
   .reveal-score-box.p2 { background: #4a2010; color: #fb923c; }
@@ -181,7 +170,9 @@
       <h4>🙈 블라인드</h4>
       <p>상대가 어느 칸에 무슨 카드를 놨는지 <strong>끝까지 안 보임</strong>. 오직 결과값만 공개. 상대 수를 추론하며 놔야 함.</p>
       <h4>🏆 승리</h4>
-      <p>한 번 쓴 카드는 폐기. 4라운드 후 방장의 R1+R3 합 vs 참가자의 R2+R4 합을 비교해 높은 쪽 승리.</p>
+      <p>한 번 쓴 카드는 폐기. 4라운드 후 방장의 R1+R3 합 vs 참가자의 R2+R4 합을 비교해 높은 쪽 승리. 동점이면 무승부.</p>
+      <h4>⏱️ 제한 시간</h4>
+      <p>카드 한 장당 30초. 시간이 지나면 남은 카드 중 하나가 빈 칸에 자동 배치됨.</p>
     </div>
   </div>
 </div>
@@ -223,26 +214,7 @@
   <div id="lobby-msg"></div>
 
   <div style="margin-top: 1rem;">
-    <button class="btn-secondary" id="btn-rules-toggle">📖 게임 방법 보기</button>
-    <div id="rules-content" style="display:none; margin-top: 10px; background:#13111f; border:1px solid #2a2740; border-radius:12px; padding:1.25rem; font-size:13px; line-height:1.7; color:#a09cc0;">
-      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🎯 목표</div>
-      <p style="margin-bottom:12px;">수식 <code style="color:#93c5fd;">(숫자)(기호)(숫자)(기호)(숫자)</code> 의 결과값을 두고 겨루는 2인 대전. 각자 같은 카드 10장(+, −, ×, ÷, −2, −1, −1, 2, 1, 1)을 가지고 시작해.</p>
-
-      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🔄 진행</div>
-      <p style="margin-bottom:12px;">총 4라운드. 라운드마다 <strong style="color:#fcd9b8;">득점자(주인)</strong>가 정해져 — R1·R3은 방장, R2·R4는 참가자가 주인이야. 주인이 먼저 카드를 놓고, 둘이 번갈아 빈 칸을 채워 5장을 완성해.</p>
-
-      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">⚔️ 공격과 방어</div>
-      <p style="margin-bottom:12px;">완성된 수식의 결과값은 <strong style="color:#fcd9b8;">그 라운드 주인의 점수</strong>가 돼. 주인은 결과값을 키우려 하고, 상대는 깎으려고 방해해. 음수가 나오면 주인 점수가 깎여.</p>
-
-      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🙈 블라인드</div>
-      <p style="margin-bottom:12px;">상대가 어느 칸에 무슨 카드를 놨는지는 <strong style="color:#fcd9b8;">끝까지 안 보여</strong>. 오직 결과값만 공개돼. 상대 수를 추론하면서 놔야 해.</p>
-
-      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🏆 승리</div>
-      <p style="margin-bottom:12px;">한 번 쓴 카드는 폐기. 4라운드 후, 방장의 R1+R3 점수 합과 참가자의 R2+R4 점수 합을 비교해 높은 쪽이 승리.</p>
-
-      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">⏱️ 제한 시간</div>
-      <p>카드 한 장당 30초. 시간이 지나면 남은 카드 중 하나가 빈 칸에 자동으로 배치돼.</p>
-    </div>
+    <button class="btn-secondary" id="btn-rules-lobby">📖 게임 방법 보기</button>
   </div>
 </div>
 
@@ -469,18 +441,6 @@ function showGameMsg(text, type = 'info') {
 }
 
 // 규칙 펼치기 토글
-document.getElementById('btn-rules-toggle').addEventListener('click', () => {
-  const content = document.getElementById('rules-content');
-  const btn = document.getElementById('btn-rules-toggle');
-  if (content.style.display === 'none') {
-    content.style.display = 'block';
-    btn.textContent = '📖 게임 방법 닫기';
-  } else {
-    content.style.display = 'none';
-    btn.textContent = '📖 게임 방법 보기';
-  }
-});
-
 // 방 만들기
 document.getElementById('btn-create').addEventListener('click', async () => {
   myName = document.getElementById('my-name').value.trim();
@@ -670,35 +630,41 @@ function startTimer(turnKey) {
 
 async function autoPlaceRandom() {
   if (isPlacing) return; // 수동/자동 배치 중복 방지
-  // 시간 초과: 내 손패에서 빈 칸에 맞는 카드를 무작위로 골라 자동 배치
-  const snap = await get(roomRef);
-  if (!snap.exists()) return;
-  const data = normalizeData(snap.val());
-  if (data.phase !== 'playing' || data.currentTurn !== myRole) return;
+  isPlacing = true; // 비동기 대기 전에 즉시 선점 — 그 사이 수동 클릭 차단
+  try {
+    // 시간 초과: 내 손패에서 빈 칸에 맞는 카드를 무작위로 골라 자동 배치
+    const snap = await get(roomRef);
+    if (!snap.exists()) return;
+    const data = normalizeData(snap.val());
+    if (data.phase !== 'playing' || data.currentTurn !== myRole) return;
 
-  const emptyIdx = [];
-  for (let i = 0; i < 5; i++) if (isEmpty(data.slots[i])) emptyIdx.push(i);
-  if (emptyIdx.length === 0) return;
+    const emptyIdx = [];
+    for (let i = 0; i < 5; i++) if (isEmpty(data.slots[i])) emptyIdx.push(i);
+    if (emptyIdx.length === 0) return;
 
-  const myUsed = myRole === 'p1' ? data.p1Used : data.p2Used;
+    const myUsed = myRole === 'p1' ? data.p1Used : data.p2Used;
 
-  // 빈 칸 중 하나를 무작위 선택 → 그 칸 타입에 맞는 안 쓴 카드 무작위 선택
-  for (const slotIdx of emptyIdx.sort(() => Math.random() - 0.5)) {
-    const needNum = slotType(slotIdx) === 'num';
-    const candidates = [];
-    CARDS.forEach((card, idx) => {
-      if (myUsed[idx]) return;
-      if (needNum && isNum(card)) candidates.push(idx);
-      if (!needNum && isOp(card)) candidates.push(idx);
-    });
-    if (candidates.length > 0) {
-      const pick = candidates[Math.floor(Math.random() * candidates.length)];
-      localSelectedCard = CARDS[pick];
-      localSelectedCardIdx = pick;
-      showGameMsg('시간 초과 — 카드가 자동으로 배치됩니다.', 'warn');
-      await placeCard(slotIdx);
-      return;
+    // 빈 칸 중 하나를 무작위 선택 → 그 칸 타입에 맞는 안 쓴 카드 무작위 선택
+    for (const slotIdx of emptyIdx.sort(() => Math.random() - 0.5)) {
+      const needNum = slotType(slotIdx) === 'num';
+      const candidates = [];
+      CARDS.forEach((card, idx) => {
+        if (myUsed[idx]) return;
+        if (needNum && isNum(card)) candidates.push(idx);
+        if (!needNum && isOp(card)) candidates.push(idx);
+      });
+      if (candidates.length > 0) {
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        localSelectedCard = CARDS[pick];
+        localSelectedCardIdx = pick;
+        showGameMsg('시간 초과 — 카드가 자동으로 배치됩니다.', 'warn');
+        isPlacing = false; // placeCard가 다시 잡도록 해제
+        await placeCard(slotIdx);
+        return;
+      }
     }
+  } finally {
+    isPlacing = false;
   }
 }
 
@@ -1060,6 +1026,7 @@ document.getElementById('btn-left-lobby').addEventListener('click', () => resetT
 function openRules() { document.getElementById('modal-rules').classList.add('show'); }
 function closeRules() { document.getElementById('modal-rules').classList.remove('show'); }
 document.getElementById('btn-rules-game').addEventListener('click', openRules);
+document.getElementById('btn-rules-lobby').addEventListener('click', openRules);
 document.getElementById('modal-rules-close').addEventListener('click', closeRules);
 document.getElementById('modal-rules').addEventListener('click', (e) => {
   if (e.target.id === 'modal-rules') closeRules();
