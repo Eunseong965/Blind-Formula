@@ -481,7 +481,7 @@ function renderGame(data) {
 
   for (let i = 0; i < 5; i++) {
     const isNumSlot = slotType(i) === 'num';
-    const filled = slots[i] !== null;
+    const filled = slots[i] !== null && slots[i] !== undefined;
     const owner = slotOwner[i];
     const div = document.createElement('div');
     div.className = 'slot ' + (isNumSlot ? 'num' : 'op');
@@ -557,7 +557,7 @@ async function placeCard(slotIdx, data) {
   const cardIsOp = isOp(localSelectedCard);
   if (isNumSlot && !cardIsNum) { showGameMsg('숫자 자리에는 숫자 카드만!', 'error'); return; }
   if (!isNumSlot && !cardIsOp) { showGameMsg('기호 자리에는 기호 카드만!', 'error'); return; }
-  if (data.slots[slotIdx] !== null) return;
+  if (data.slots[slotIdx] !== null && data.slots[slotIdx] !== undefined) return;
 
   const newSlots = [...data.slots];
   const newSlotOwner = [...data.slotOwner];
