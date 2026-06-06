@@ -290,8 +290,10 @@ let localSelectedCardIdx = null;
 let localSelectedCard = null;
 
 const OPS = ['+', '-', '*', '/'];
+const EMPTY = '';
+function isEmpty(v) { return v === null || v === undefined || v === EMPTY; }
 function isOp(v) { return OPS.includes(v); }
-function isNum(v) { return !isOp(v) && v !== null && v !== undefined && v !== '' && !isNaN(Number(v)); }
+function isNum(v) { return !isEmpty(v) && !isOp(v) && !isNaN(Number(v)); }
 function toNum(v) { return Number(v); }
 function slotType(i) { return [0,2,4].includes(i) ? 'num' : 'op'; }
 function cardLabel(c) {
@@ -361,12 +363,12 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     round: 1,
     currentTurn: 'p1',
     roundOwner: 'p1',
-    slots: [null, null, null, null, null],
-    slotOwner: [null, null, null, null, null],
+    slots: ['', '', '', '', ''],
+    slotOwner: ['', '', '', '', ''],
     slotCount: 0,
     p1Used: [false,false,false,false,false,false,false,false,false,false],
     p2Used: [false,false,false,false,false,false,false,false,false,false],
-    scores: { p1: [null,null,null,null], p2: [null,null,null,null] },
+    scores: { p1: [0,0,0,0], p2: [0,0,0,0] },
     history: [],
     revealAck: { p1: false, p2: false },
   };
@@ -423,14 +425,14 @@ function normalizeData(data) {
     Object.keys(v).forEach(k => { arr[parseInt(k)] = v[k]; });
     return arr;
   };
-  data.slots = toArr(data.slots, 5, null);
-  data.slotOwner = toArr(data.slotOwner, 5, null);
+  data.slots = toArr(data.slots, 5, EMPTY);
+  data.slotOwner = toArr(data.slotOwner, 5, EMPTY);
   data.p1Used = toArr(data.p1Used, 10, false);
   data.p2Used = toArr(data.p2Used, 10, false);
   data.history = data.history ? (Array.isArray(data.history) ? data.history : Object.values(data.history)) : [];
-  if (!data.scores) data.scores = { p1: [null,null,null,null], p2: [null,null,null,null] };
-  data.scores.p1 = toArr(data.scores.p1, 4, null);
-  data.scores.p2 = toArr(data.scores.p2, 4, null);
+  if (!data.scores) data.scores = { p1: [0,0,0,0], p2: [0,0,0,0] };
+  data.scores.p1 = toArr(data.scores.p1, 4, 0);
+  data.scores.p2 = toArr(data.scores.p2, 4, 0);
   return data;
 }
 
@@ -490,14 +492,14 @@ function renderGame(data) {
   }
 
   // 슬롯 렌더
-  const slots = data.slots || [null,null,null,null,null];
-  const slotOwner = data.slotOwner || [null,null,null,null,null];
+  const slots = data.slots;
+  const slotOwner = data.slotOwner;
   const slotsEl = document.getElementById('g-slots');
   slotsEl.innerHTML = '';
 
   for (let i = 0; i < 5; i++) {
     const isNumSlot = slotType(i) === 'num';
-    const filled = slots[i] !== null && slots[i] !== undefined;
+    const filled = !isEmpty(slots[i]);
     const owner = slotOwner[i];
     const div = document.createElement('div');
     div.className = 'slot ' + (isNumSlot ? 'num' : 'op');
@@ -573,7 +575,7 @@ async function placeCard(slotIdx) {
   const data = normalizeData(snap.val());
 
   if (data.currentTurn !== myRole) { showGameMsg('내 차례가 아닙니다.', 'warn'); return; }
-  if (data.slots[slotIdx] !== null && data.slots[slotIdx] !== undefined) { showGameMsg('이미 카드가 있는 자리입니다.', 'warn'); return; }
+  if (!isEmpty(data.slots[slotIdx])) { showGameMsg('이미 카드가 있는 자리입니다.', 'warn'); return; }
 
   const isNumSlot = slotType(slotIdx) === 'num';
   const cardIsNum = isNum(localSelectedCard);
@@ -581,8 +583,9 @@ async function placeCard(slotIdx) {
   if (isNumSlot && !cardIsNum) { showGameMsg('숫자 자리에는 숫자 카드만!', 'error'); return; }
   if (!isNumSlot && !cardIsOp) { showGameMsg('기호 자리에는 기호 카드만!', 'error'); return; }
 
-  const newSlots = [...data.slots];
-  const newSlotOwner = [...data.slotOwner];
+  // 빈 값을 모두 빈 문자열로 통일 (Firebase는 undefined/null 거부)
+  const newSlots = data.slots.map(v => isEmpty(v) ? EMPTY : v);
+  const newSlotOwner = data.slotOwner.map(v => isEmpty(v) ? EMPTY : v);
   newSlots[slotIdx] = localSelectedCard;
   newSlotOwner[slotIdx] = myRole;
 
@@ -661,8 +664,8 @@ function renderReveal(data) {
           await update(roomRef, {
             phase: 'playing',
             round: nextRound,
-            slots: [null,null,null,null,null],
-            slotOwner: [null,null,null,null,null],
+            slots: ['','','','',''],
+            slotOwner: ['','','','',''],
             slotCount: 0,
             p1Used: [false,false,false,false,false,false,false,false,false,false],
             p2Used: [false,false,false,false,false,false,false,false,false,false],
