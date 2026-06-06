@@ -141,9 +141,65 @@
 
   .copy-btn { background: #2a2740; color: #a09cc0; border: none; border-radius: 7px; padding: 6px 12px; font-size: 12px; cursor: pointer; margin-left: 8px; }
   .copy-btn:hover { background: #3a3550; }
+
+  .icon-btn { background: #1e1c2e; border: 1px solid #2a2740; border-radius: 8px; width: 32px; height: 32px; font-size: 15px; cursor: pointer; color: #a09cc0; display: inline-flex; align-items: center; justify-content: center; padding: 0; transition: all 0.12s; }
+  .icon-btn:hover { background: #2a2740; color: #e8e6f0; }
+
+  .modal-overlay { position: fixed; inset: 0; background: #000a; display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: #1a1826; border: 1px solid #2a2740; border-radius: 16px; padding: 1.5rem; max-width: 440px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .modal-title { font-size: 18px; font-weight: 700; color: #f0eeff; }
+  .modal-close { background: none; border: none; font-size: 22px; color: #6b6880; cursor: pointer; padding: 0; width: 28px; height: 28px; }
+  .modal-close:hover { color: #e8e6f0; }
+  .rules-body { font-size: 13px; line-height: 1.7; color: #a09cc0; }
+  .rules-body h4 { color: #a78bfa; font-weight: 700; margin: 14px 0 6px; font-size: 13px; }
+  .rules-body h4:first-child { margin-top: 0; }
+  .rules-body p { margin-bottom: 4px; }
+  .rules-body code { color: #93c5fd; background: #13111f; padding: 1px 5px; border-radius: 4px; }
+  .rules-body strong { color: #fcd9b8; }
+  .confirm-btns { display: flex; gap: 10px; margin-top: 1.25rem; }
+  .confirm-btns button { flex: 1; }
 </style>
 </head>
 <body>
+
+<!-- 규칙 모달 (공통) -->
+<div class="modal-overlay" id="modal-rules">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">📖 게임 방법</span>
+      <button class="modal-close" id="modal-rules-close">×</button>
+    </div>
+    <div class="rules-body">
+      <h4>🎯 목표</h4>
+      <p>수식 <code>(숫자)(기호)(숫자)(기호)(숫자)</code> 의 결과값을 두고 겨루는 2인 대전. 각자 같은 카드 10장(+, −, ×, ÷, −2, −1, −1, 2, 1, 1)으로 시작.</p>
+      <h4>🔄 진행</h4>
+      <p>총 4라운드. 라운드마다 <strong>득점자(주인)</strong>가 정해져 — R1·R3은 방장, R2·R4는 참가자. 주인이 먼저 놓고, 둘이 번갈아 빈 칸을 채워 5장을 완성.</p>
+      <h4>⚔️ 공격과 방어</h4>
+      <p>완성된 수식의 결과값은 <strong>그 라운드 주인의 점수</strong>. 주인은 키우려 하고, 상대는 깎으려 방해. 음수면 주인 점수가 깎임.</p>
+      <h4>🙈 블라인드</h4>
+      <p>상대가 어느 칸에 무슨 카드를 놨는지 <strong>끝까지 안 보임</strong>. 오직 결과값만 공개. 상대 수를 추론하며 놔야 함.</p>
+      <h4>🏆 승리</h4>
+      <p>한 번 쓴 카드는 폐기. 4라운드 후 방장의 R1+R3 합 vs 참가자의 R2+R4 합을 비교해 높은 쪽 승리.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 다시하기 확인 모달 -->
+<div class="modal-overlay" id="modal-restart">
+  <div class="modal-box" style="max-width: 360px;">
+    <div class="modal-header">
+      <span class="modal-title">새 게임</span>
+      <button class="modal-close" id="modal-restart-close">×</button>
+    </div>
+    <div class="rules-body">진행 중인 게임을 끝내고 로비로 돌아갈까요? 현재 게임 기록은 사라집니다.</div>
+    <div class="confirm-btns">
+      <button class="btn-secondary" id="modal-restart-cancel">취소</button>
+      <button class="btn-danger" id="modal-restart-confirm" style="width:auto;">새 게임 시작</button>
+    </div>
+  </div>
+</div>
 
 <!-- 로비 화면 -->
 <div class="screen active" id="screen-lobby">
@@ -165,6 +221,29 @@
     </div>
   </div>
   <div id="lobby-msg"></div>
+
+  <div style="margin-top: 1rem;">
+    <button class="btn-secondary" id="btn-rules-toggle">📖 게임 방법 보기</button>
+    <div id="rules-content" style="display:none; margin-top: 10px; background:#13111f; border:1px solid #2a2740; border-radius:12px; padding:1.25rem; font-size:13px; line-height:1.7; color:#a09cc0;">
+      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🎯 목표</div>
+      <p style="margin-bottom:12px;">수식 <code style="color:#93c5fd;">(숫자)(기호)(숫자)(기호)(숫자)</code> 의 결과값을 두고 겨루는 2인 대전. 각자 같은 카드 10장(+, −, ×, ÷, −2, −1, −1, 2, 1, 1)을 가지고 시작해.</p>
+
+      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🔄 진행</div>
+      <p style="margin-bottom:12px;">총 4라운드. 라운드마다 <strong style="color:#fcd9b8;">득점자(주인)</strong>가 정해져 — R1·R3은 방장, R2·R4는 참가자가 주인이야. 주인이 먼저 카드를 놓고, 둘이 번갈아 빈 칸을 채워 5장을 완성해.</p>
+
+      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">⚔️ 공격과 방어</div>
+      <p style="margin-bottom:12px;">완성된 수식의 결과값은 <strong style="color:#fcd9b8;">그 라운드 주인의 점수</strong>가 돼. 주인은 결과값을 키우려 하고, 상대는 깎으려고 방해해. 음수가 나오면 주인 점수가 깎여.</p>
+
+      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🙈 블라인드</div>
+      <p style="margin-bottom:12px;">상대가 어느 칸에 무슨 카드를 놨는지는 <strong style="color:#fcd9b8;">끝까지 안 보여</strong>. 오직 결과값만 공개돼. 상대 수를 추론하면서 놔야 해.</p>
+
+      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">🏆 승리</div>
+      <p style="margin-bottom:12px;">한 번 쓴 카드는 폐기. 4라운드 후, 방장의 R1+R3 점수 합과 참가자의 R2+R4 점수 합을 비교해 높은 쪽이 승리.</p>
+
+      <div style="color:#a78bfa; font-weight:700; margin-bottom:8px;">⏱️ 제한 시간</div>
+      <p>카드 한 장당 30초. 시간이 지나면 남은 카드 중 하나가 빈 칸에 자동으로 배치돼.</p>
+    </div>
+  </div>
 </div>
 
 <!-- 대기 화면 -->
@@ -186,7 +265,11 @@
 <div class="screen" id="screen-game">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem;">
     <div class="logo" style="font-size:18px; margin-bottom:0;">블라인드 수식전</div>
-    <div style="font-size:12px; color:#4a4760;">라운드 <span id="g-round">1</span>/4</div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-size:12px; color:#4a4760;">라운드 <span id="g-round">1</span>/4</span>
+      <button class="icon-btn" id="btn-rules-game" title="게임 방법">❓</button>
+      <button class="icon-btn" id="btn-restart-game" title="새 게임">↻</button>
+    </div>
   </div>
 
   <div class="score-row">
@@ -207,7 +290,10 @@
   <div class="formula-board">
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <div style="font-size:12px; color:#4a4760;">수식판</div>
-      <div id="g-turn-badge"></div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div id="g-timer" style="font-size:13px; font-weight:700; color:#34d399;"></div>
+        <div id="g-turn-badge"></div>
+      </div>
     </div>
     <div class="formula-slots" id="g-slots"></div>
   </div>
@@ -241,6 +327,19 @@
   <div id="r-action" style="margin-top: auto; padding-top: 1rem;"></div>
 </div>
 
+<!-- 상대 이탈 화면 -->
+<div class="screen" id="screen-left">
+  <div style="margin-top: 3rem;">
+    <div class="logo">블라인드 수식전</div>
+  </div>
+  <div class="card" style="text-align:center; border-color:#fb923c44;">
+    <div style="font-size:40px; margin-bottom:12px;">🚪</div>
+    <h2 style="color:#fb923c;" id="left-title">상대방이 나갔습니다</h2>
+    <div class="rules-body" id="left-msg" style="text-align:center; margin-top:8px;">상대방의 연결이 끊어졌습니다. 게임을 계속 진행할 수 없습니다.</div>
+  </div>
+  <button class="btn-primary" id="btn-left-lobby">로비로 돌아가기</button>
+</div>
+
 <!-- 최종 결과 화면 -->
 <div class="screen" id="screen-end">
   <div style="margin-top: 1.5rem; margin-bottom: 1rem;">
@@ -267,7 +366,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, update, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, set, get, update, onValue, off, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCZn0R7MwtcBULJRUM6jZbSUcaRv1Q_nZE",
@@ -288,6 +387,12 @@ let gameListener = null;
 let localSelectedCardIdx = null;
 let localSelectedCard = null;
 
+const TURN_SECONDS = 30;
+let timerInterval = null;
+let timerDeadline = null;
+let timerTurnKey = null; // 같은 턴에 타이머 중복 시작 방지
+let isPlacing = false;   // 카드 배치 처리 중 중복 실행 방지
+
 const OPS = ['+', '-', '*', '/'];
 const EMPTY = '';
 function isEmpty(v) { return v === null || v === undefined || v === EMPTY; }
@@ -301,14 +406,23 @@ function cardLabel(c) {
   if (n === -1) return '−1';
   return String(c);
 }
+function fmtScore(s) {
+  // 부동소수점 오차 정리 후, 정수면 정수로 소수면 최대 2자리로 표시
+  const rounded = Math.round(s * 10000) / 10000;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return String(parseFloat(rounded.toFixed(2)));
+}
+
 function signedScore(s) {
-  // 양수는 +N, 음수는 −N, 0은 0
-  if (s > 0) return '+' + s;
-  if (s < 0) return '−' + Math.abs(s);
+  // 양수는 +N, 음수는 −N, 0은 0 (소수 대응)
+  const v = fmtScore(s);
+  const num = parseFloat(v);
+  if (num > 0) return '+' + v;
+  if (num < 0) return '−' + v.replace('-', '');
   return '0';
 }
 
-function evalFormulaRaw(slots) {
+function evalFormula(slots) {
   const [_a, op1, _b, op2, _c] = slots;
   if (!isNum(_a) || !isOp(op1) || !isNum(_b) || !isOp(op2) || !isNum(_c)) return null;
   const a = toNum(_a), b = toNum(_b), c = toNum(_c);
@@ -330,13 +444,6 @@ function evalFormulaRaw(slots) {
       return op2 === '+' ? left + c : left - c;
     }
   } catch(e) { return 0; }
-}
-
-function evalFormula(slots) {
-  const raw = evalFormulaRaw(slots);
-  if (raw === null) return null;
-  // 소수점은 반올림 (음수도 .5는 0에서 먼 쪽으로: -2.5 → -3)
-  return raw < 0 ? -Math.round(-raw) : Math.round(raw);
 }
 
 function generateCode() {
@@ -361,6 +468,19 @@ function showGameMsg(text, type = 'info') {
   el.innerHTML = text ? `<div class="msg ${type}">${text}</div>` : '';
 }
 
+// 규칙 펼치기 토글
+document.getElementById('btn-rules-toggle').addEventListener('click', () => {
+  const content = document.getElementById('rules-content');
+  const btn = document.getElementById('btn-rules-toggle');
+  if (content.style.display === 'none') {
+    content.style.display = 'block';
+    btn.textContent = '📖 게임 방법 닫기';
+  } else {
+    content.style.display = 'none';
+    btn.textContent = '📖 게임 방법 보기';
+  }
+});
+
 // 방 만들기
 document.getElementById('btn-create').addEventListener('click', async () => {
   myName = document.getElementById('my-name').value.trim();
@@ -383,13 +503,23 @@ document.getElementById('btn-create').addEventListener('click', async () => {
     scores: { p1: [0,0,0,0], p2: [0,0,0,0] },
     history: [],
     revealAck: { p1: false, p2: false },
+    presence: { p1: true, p2: false },
+    leftBy: '',
   };
   await set(roomRef, initialState);
+  setupPresence();
 
   document.getElementById('display-room-code').textContent = roomCode;
   showScreen('waiting');
   startGameListener();
 });
+
+// 접속 상태 관리: 연결 끊기면 presence를 false로, 명시적 종료는 leftBy 기록
+function setupPresence() {
+  const presRef = ref(db, 'rooms/' + roomCode + '/presence/' + myRole);
+  set(presRef, true);
+  onDisconnect(presRef).set(false);
+}
 
 // 코드 복사
 document.getElementById('btn-copy-code').addEventListener('click', () => {
@@ -415,14 +545,25 @@ document.getElementById('btn-join').addEventListener('click', async () => {
   roomCode = code;
   roomRef = ref(db, 'rooms/' + roomCode);
   await update(roomRef, { p2Name: myName, phase: 'playing' });
+  setupPresence();
   showScreen('game');
   startGameListener();
 });
 
 function startGameListener() {
-  if (gameListener) off(roomRef, 'value', gameListener);
+  if (gameListener && roomRef) off(roomRef, 'value', gameListener);
   gameListener = onValue(roomRef, (snap) => {
-    if (!snap.exists()) return;
+    if (!snap.exists()) {
+      // 방이 사라짐 = 상대(방장)가 종료. 이미 로비/이탈 화면이면 무시
+      if (myRole && !document.getElementById('screen-left').classList.contains('active')
+          && !document.getElementById('screen-lobby').classList.contains('active')) {
+        stopTimer(); timerTurnKey = null;
+        document.getElementById('left-title').textContent = '게임이 종료되었습니다';
+        document.getElementById('left-msg').textContent = '상대방이 방을 닫았습니다.';
+        showScreen('left');
+      }
+      return;
+    }
     const data = snap.val();
     handleGameState(data);
   });
@@ -445,22 +586,119 @@ function normalizeData(data) {
   if (!data.scores) data.scores = { p1: [0,0,0,0], p2: [0,0,0,0] };
   data.scores.p1 = toArr(data.scores.p1, 4, 0);
   data.scores.p2 = toArr(data.scores.p2, 4, 0);
+  // presence: 명시되지 않은 값은 true로 간주(오탐 방지). 명시적 false만 이탈로 처리
+  data.presence = data.presence || {};
+  if (data.presence.p1 === undefined) data.presence.p1 = true;
+  if (data.presence.p2 === undefined) data.presence.p2 = true;
+  data.leftBy = data.leftBy || '';
   return data;
 }
 
 function handleGameState(rawData) {
-  if (rawData.phase === 'waiting') return;
+  if (rawData.phase === 'waiting') {
+    // 대기 중 방장이 상대 참가를 기다림 — 이탈 체크 불필요
+    return;
+  }
   const data = normalizeData(rawData);
+
+  // 상대 이탈 감지 (게임이 끝나지 않았을 때만)
+  if (data.phase !== 'end') {
+    const oppRole = myRole === 'p1' ? 'p2' : 'p1';
+    const presence = data.presence || {};
+    const oppPresent = presence[oppRole];
+    const oppName = oppRole === 'p1' ? data.p1Name : data.p2Name;
+
+    if (data.leftBy === oppRole || oppPresent === false) {
+      stopTimer(); timerTurnKey = null;
+      const titleEl = document.getElementById('left-title');
+      const msgEl = document.getElementById('left-msg');
+      if (data.leftBy === oppRole) {
+        titleEl.textContent = `${oppName || '상대방'}이(가) 게임을 종료했습니다`;
+        msgEl.textContent = '상대방이 게임을 나갔습니다. 더 이상 진행할 수 없습니다.';
+      } else {
+        titleEl.textContent = '상대방의 연결이 끊겼습니다';
+        msgEl.textContent = `${oppName || '상대방'}의 접속이 끊어졌습니다. 게임을 계속 진행할 수 없습니다.`;
+      }
+      showScreen('left');
+      return;
+    }
+  }
 
   if (data.phase === 'playing') {
     showScreen('game');
     renderGame(data);
   } else if (data.phase === 'reveal') {
+    stopTimer(); timerTurnKey = null;
     showScreen('reveal');
     renderReveal(data);
   } else if (data.phase === 'end') {
+    stopTimer(); timerTurnKey = null;
     showScreen('end');
     renderEnd(data);
+  }
+}
+
+function stopTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  timerDeadline = null;
+  const el = document.getElementById('g-timer');
+  if (el) el.textContent = '';
+}
+
+function startTimer(turnKey) {
+  // 같은 턴이면 이미 돌아가는 타이머 유지
+  if (timerTurnKey === turnKey && timerInterval) return;
+  stopTimer();
+  timerTurnKey = turnKey;
+  timerDeadline = Date.now() + TURN_SECONDS * 1000;
+
+  const tick = () => {
+    const el = document.getElementById('g-timer');
+    if (!el) return;
+    const remain = Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000));
+    el.textContent = `⏱️ ${remain}초`;
+    el.style.color = remain <= 5 ? '#f87171' : remain <= 10 ? '#fbbf24' : '#34d399';
+    if (remain <= 0) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      autoPlaceRandom();
+    }
+  };
+  tick();
+  timerInterval = setInterval(tick, 250);
+}
+
+async function autoPlaceRandom() {
+  if (isPlacing) return; // 수동/자동 배치 중복 방지
+  // 시간 초과: 내 손패에서 빈 칸에 맞는 카드를 무작위로 골라 자동 배치
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = normalizeData(snap.val());
+  if (data.phase !== 'playing' || data.currentTurn !== myRole) return;
+
+  const emptyIdx = [];
+  for (let i = 0; i < 5; i++) if (isEmpty(data.slots[i])) emptyIdx.push(i);
+  if (emptyIdx.length === 0) return;
+
+  const myUsed = myRole === 'p1' ? data.p1Used : data.p2Used;
+
+  // 빈 칸 중 하나를 무작위 선택 → 그 칸 타입에 맞는 안 쓴 카드 무작위 선택
+  for (const slotIdx of emptyIdx.sort(() => Math.random() - 0.5)) {
+    const needNum = slotType(slotIdx) === 'num';
+    const candidates = [];
+    CARDS.forEach((card, idx) => {
+      if (myUsed[idx]) return;
+      if (needNum && isNum(card)) candidates.push(idx);
+      if (!needNum && isOp(card)) candidates.push(idx);
+    });
+    if (candidates.length > 0) {
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      localSelectedCard = CARDS[pick];
+      localSelectedCardIdx = pick;
+      showGameMsg('시간 초과 — 카드가 자동으로 배치됩니다.', 'warn');
+      await placeCard(slotIdx);
+      return;
+    }
   }
 }
 
@@ -477,8 +715,8 @@ function renderGame(data) {
 
   document.getElementById('g-p1-name').textContent = data.p1Name + (myRole === 'p1' ? ' (나)' : '');
   document.getElementById('g-p2-name').textContent = data.p2Name + (myRole === 'p2' ? ' (나)' : '');
-  document.getElementById('g-p1-total').textContent = p1total;
-  document.getElementById('g-p2-total').textContent = p2total;
+  document.getElementById('g-p1-total').textContent = fmtScore(p1total);
+  document.getElementById('g-p2-total').textContent = fmtScore(p2total);
   document.getElementById('g-p1-detail').textContent = owner === 'p1' ? '이번 라운드 득점자' : 'R1·R3 담당';
   document.getElementById('g-p2-detail').textContent = owner === 'p2' ? '이번 라운드 득점자' : 'R2·R4 담당';
 
@@ -512,6 +750,15 @@ function renderGame(data) {
     showGameMsg(`${roleMsg}<br>카드를 선택한 후 빈 자리를 클릭하세요.`, iAmOwner ? 'success' : 'warn');
   } else {
     showGameMsg(`${roleMsg}<br>${turnName}이(가) 카드를 놓는 중...`, 'info');
+  }
+
+  // 타이머: 내 차례일 때만 작동. 턴 키로 라운드+놓인수+역할 구분
+  if (isMyTurn) {
+    const turnKey = `${data.round}-${data.slotCount}-${myRole}`;
+    startTimer(turnKey);
+  } else {
+    stopTimer();
+    timerTurnKey = null;
   }
 
   // 슬롯 렌더
@@ -557,7 +804,7 @@ function renderGame(data) {
   const preview = evalFormula(slots);
   const eq = document.createElement('span'); eq.className = 'eq'; eq.textContent = '=';
   const res = document.createElement('div'); res.className = 'result-preview';
-  res.textContent = preview !== null ? preview : '?';
+  res.textContent = preview !== null ? fmtScore(preview) : '?';
   slotsEl.appendChild(eq);
   slotsEl.appendChild(res);
 
@@ -595,63 +842,70 @@ function renderGame(data) {
 }
 
 async function placeCard(slotIdx) {
+  if (isPlacing) return; // 이미 처리 중이면 무시
   if (localSelectedCard === null) { showGameMsg('먼저 카드를 선택하세요.', 'warn'); return; }
 
-  // Firebase에서 항상 최신 데이터를 읽어옴
-  const snap = await get(roomRef);
-  if (!snap.exists()) return;
-  const data = normalizeData(snap.val());
+  isPlacing = true;
+  try {
+    // Firebase에서 항상 최신 데이터를 읽어옴
+    const snap = await get(roomRef);
+    if (!snap.exists()) return;
+    const data = normalizeData(snap.val());
 
-  if (data.currentTurn !== myRole) { showGameMsg('내 차례가 아닙니다.', 'warn'); return; }
-  if (!isEmpty(data.slots[slotIdx])) { showGameMsg('이미 카드가 있는 자리입니다.', 'warn'); return; }
+    if (data.currentTurn !== myRole) { showGameMsg('내 차례가 아닙니다.', 'warn'); return; }
+    if (!isEmpty(data.slots[slotIdx])) { showGameMsg('이미 카드가 있는 자리입니다.', 'warn'); return; }
 
-  const isNumSlot = slotType(slotIdx) === 'num';
-  const cardIsNum = isNum(localSelectedCard);
-  const cardIsOp = isOp(localSelectedCard);
-  if (isNumSlot && !cardIsNum) { showGameMsg('숫자 자리에는 숫자 카드만!', 'error'); return; }
-  if (!isNumSlot && !cardIsOp) { showGameMsg('기호 자리에는 기호 카드만!', 'error'); return; }
+    const isNumSlot = slotType(slotIdx) === 'num';
+    const cardIsNum = isNum(localSelectedCard);
+    const cardIsOp = isOp(localSelectedCard);
+    if (isNumSlot && !cardIsNum) { showGameMsg('숫자 자리에는 숫자 카드만!', 'error'); return; }
+    if (!isNumSlot && !cardIsOp) { showGameMsg('기호 자리에는 기호 카드만!', 'error'); return; }
 
-  // 빈 값을 모두 빈 문자열로 통일 (Firebase는 undefined/null 거부)
-  const newSlots = data.slots.map(v => isEmpty(v) ? EMPTY : v);
-  const newSlotOwner = data.slotOwner.map(v => isEmpty(v) ? EMPTY : v);
-  newSlots[slotIdx] = localSelectedCard;
-  newSlotOwner[slotIdx] = myRole;
+    // 빈 값을 모두 빈 문자열로 통일 (Firebase는 undefined/null 거부)
+    const newSlots = data.slots.map(v => isEmpty(v) ? EMPTY : v);
+    const newSlotOwner = data.slotOwner.map(v => isEmpty(v) ? EMPTY : v);
+    newSlots[slotIdx] = localSelectedCard;
+    newSlotOwner[slotIdx] = myRole;
 
-  const usedKey = myRole === 'p1' ? 'p1Used' : 'p2Used';
-  const newUsed = [...(myRole === 'p1' ? data.p1Used : data.p2Used)];
-  newUsed[localSelectedCardIdx] = true;
+    const usedKey = myRole === 'p1' ? 'p1Used' : 'p2Used';
+    const newUsed = [...(myRole === 'p1' ? data.p1Used : data.p2Used)];
+    newUsed[localSelectedCardIdx] = true;
 
-  const newCount = data.slotCount + 1;
-  const nextTurn = data.currentTurn === 'p1' ? 'p2' : 'p1';
+    const newCount = data.slotCount + 1;
+    const nextTurn = data.currentTurn === 'p1' ? 'p2' : 'p1';
 
-  localSelectedCard = null;
-  localSelectedCardIdx = null;
+    localSelectedCard = null;
+    localSelectedCardIdx = null;
+    stopTimer(); // 내가 놓았으니 타이머 정지
 
-  const updateData = {
-    slots: newSlots,
-    slotOwner: newSlotOwner,
-    slotCount: newCount,
-    currentTurn: nextTurn,
-    [usedKey]: newUsed,
-  };
+    const updateData = {
+      slots: newSlots,
+      slotOwner: newSlotOwner,
+      slotCount: newCount,
+      currentTurn: nextTurn,
+      [usedKey]: newUsed,
+    };
 
-  if (newCount === 5) {
-    const result = evalFormula(newSlots);
-    const score = result === null ? 0 : result;
-    const rIdx = data.round - 1;
-    const owner = data.roundOwner;
-    const newScores = JSON.parse(JSON.stringify(data.scores));
-    newScores[owner][rIdx] = score;
-    const formulaStr = `결과값 = ${score}`;
-    const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
-    const newHistory = [...(data.history || []), { round: data.round, formula: formulaStr, score, owner, ownerName }];
-    updateData.scores = newScores;
-    updateData.history = newHistory;
-    updateData.phase = 'reveal';
-    updateData.revealAck = { p1: false, p2: false };
+    if (newCount === 5) {
+      const result = evalFormula(newSlots);
+      const score = result === null ? 0 : result;
+      const rIdx = data.round - 1;
+      const owner = data.roundOwner;
+      const newScores = JSON.parse(JSON.stringify(data.scores));
+      newScores[owner][rIdx] = score;
+      const formulaStr = `결과값 = ${score}`;
+      const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
+      const newHistory = [...(data.history || []), { round: data.round, formula: formulaStr, score, owner, ownerName }];
+      updateData.scores = newScores;
+      updateData.history = newHistory;
+      updateData.phase = 'reveal';
+      updateData.revealAck = { p1: false, p2: false };
+    }
+
+    await update(roomRef, updateData);
+  } finally {
+    isPlacing = false;
   }
-
-  await update(roomRef, updateData);
 }
 
 function renderReveal(data) {
@@ -681,7 +935,7 @@ function renderReveal(data) {
   const eq = document.createElement('span'); eq.className = 'eq'; eq.textContent = '=';
   const res = document.createElement('div'); res.className = 'result-preview';
   res.style.fontSize = '24px';
-  res.textContent = score;
+  res.textContent = fmtScore(score);
   slotsEl.appendChild(eq);
   slotsEl.appendChild(res);
 
@@ -733,16 +987,16 @@ function renderReveal(data) {
 function renderEnd(data) {
   data = normalizeData(data);
   // 주인에게만 점수가 들어가므로: p1은 R1+R3, p2는 R2+R4에서만 득점
-  const p1total = (data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0);
-  const p2total = (data.scores.p2[1] ?? 0) + (data.scores.p2[3] ?? 0);
+  const p1total = Math.round(((data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0)) * 10000) / 10000;
+  const p2total = Math.round(((data.scores.p2[1] ?? 0) + (data.scores.p2[3] ?? 0)) * 10000) / 10000;
 
   const winnerEl = document.getElementById('end-winner');
   if (p1total > p2total) {
-    winnerEl.innerHTML = `<div class="winner-box"><div class="winner-title">🏆 ${data.p1Name} 승리!</div><div class="winner-sub">${p1total}점 vs ${p2total}점</div></div>`;
+    winnerEl.innerHTML = `<div class="winner-box"><div class="winner-title">🏆 ${data.p1Name} 승리!</div><div class="winner-sub">${fmtScore(p1total)}점 vs ${fmtScore(p2total)}점</div></div>`;
   } else if (p2total > p1total) {
-    winnerEl.innerHTML = `<div class="winner-box" style="background:#2e1a1a; border-color: #fb923c44;"><div class="winner-title" style="color:#fb923c;">🏆 ${data.p2Name} 승리!</div><div class="winner-sub" style="color:#d97706;">${p2total}점 vs ${p1total}점</div></div>`;
+    winnerEl.innerHTML = `<div class="winner-box" style="background:#2e1a1a; border-color: #fb923c44;"><div class="winner-title" style="color:#fb923c;">🏆 ${data.p2Name} 승리!</div><div class="winner-sub" style="color:#d97706;">${fmtScore(p2total)}점 vs ${fmtScore(p1total)}점</div></div>`;
   } else {
-    winnerEl.innerHTML = `<div class="tie-box"><div class="tie-title">무승부!</div><div class="winner-sub" style="color:#a87a10;">${p1total}점 vs ${p2total}점</div></div>`;
+    winnerEl.innerHTML = `<div class="tie-box"><div class="tie-title">무승부!</div><div class="winner-sub" style="color:#a87a10;">${fmtScore(p1total)}점 vs ${fmtScore(p2total)}점</div></div>`;
   }
 
   const r1 = data.scores.p1[0] ?? 0;
@@ -752,10 +1006,10 @@ function renderEnd(data) {
 
   document.getElementById('e-p1-name').textContent = data.p1Name;
   document.getElementById('e-p2-name').textContent = data.p2Name;
-  document.getElementById('e-p1-total').textContent = p1total;
-  document.getElementById('e-p2-total').textContent = p2total;
-  document.getElementById('e-p1-detail').textContent = `R1 ${r1} + R3 ${r3}`;
-  document.getElementById('e-p2-detail').textContent = `R2 ${r2} + R4 ${r4}`;
+  document.getElementById('e-p1-total').textContent = fmtScore(p1total);
+  document.getElementById('e-p2-total').textContent = fmtScore(p2total);
+  document.getElementById('e-p1-detail').textContent = `R1 ${fmtScore(r1)} + R3 ${fmtScore(r3)}`;
+  document.getElementById('e-p2-detail').textContent = `R2 ${fmtScore(r2)} + R4 ${fmtScore(r4)}`;
 
   document.getElementById('e-set-result').innerHTML =
     `<strong>${data.p1Name}</strong>는 R1·R3에서 득점, <strong>${data.p2Name}</strong>는 R2·R4에서 득점. 각자 자기 라운드 점수 합으로 승부합니다.`;
@@ -774,13 +1028,55 @@ function renderHistory(elId, history) {
   document.getElementById(elId).innerHTML = html;
 }
 
-document.getElementById('btn-restart').addEventListener('click', () => {
-  if (gameListener) off(roomRef, 'value', gameListener);
+async function resetToLobby(notifyLeave = false) {
+  const leavingRole = myRole;
+  const leavingRef = roomRef;
+  // 게임 중 명시적으로 나가는 경우 상대에게 알림
+  if (notifyLeave && leavingRef && leavingRole) {
+    try { await update(leavingRef, { leftBy: leavingRole }); } catch(e) {}
+  }
+  stopTimer(); timerTurnKey = null;
+  if (gameListener && roomRef) off(roomRef, 'value', gameListener);
+
+  // 방장(p1)이 나가면 일정 시간 후 방 정리 (상대가 알림을 받을 시간 확보)
+  if (leavingRole === 'p1' && leavingRef) {
+    setTimeout(() => { try { remove(leavingRef); } catch(e) {} }, 5000);
+  }
+
   myRole = null; myName = ''; roomCode = ''; roomRef = null; gameListener = null;
   localSelectedCard = null; localSelectedCardIdx = null;
+  isPlacing = false;
   document.getElementById('my-name').value = '';
   document.getElementById('join-code').value = '';
   showScreen('lobby');
+}
+
+// 게임 종료(최종 결과) 후의 새 게임은 알림 불필요
+document.getElementById('btn-restart').addEventListener('click', () => resetToLobby(false));
+// 이탈 화면에서 로비로
+document.getElementById('btn-left-lobby').addEventListener('click', () => resetToLobby(false));
+
+// 규칙 모달
+function openRules() { document.getElementById('modal-rules').classList.add('show'); }
+function closeRules() { document.getElementById('modal-rules').classList.remove('show'); }
+document.getElementById('btn-rules-game').addEventListener('click', openRules);
+document.getElementById('modal-rules-close').addEventListener('click', closeRules);
+document.getElementById('modal-rules').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-rules') closeRules();
+});
+
+// 다시하기 확인 모달
+function openRestart() { document.getElementById('modal-restart').classList.add('show'); }
+function closeRestart() { document.getElementById('modal-restart').classList.remove('show'); }
+document.getElementById('btn-restart-game').addEventListener('click', openRestart);
+document.getElementById('modal-restart-close').addEventListener('click', closeRestart);
+document.getElementById('modal-restart-cancel').addEventListener('click', closeRestart);
+document.getElementById('modal-restart').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-restart') closeRestart();
+});
+document.getElementById('modal-restart-confirm').addEventListener('click', () => {
+  closeRestart();
+  resetToLobby(true); // 게임 중 나감 → 상대에게 알림
 });
 </script>
 </body>
