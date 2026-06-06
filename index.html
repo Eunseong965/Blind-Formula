@@ -301,8 +301,14 @@ function cardLabel(c) {
   if (n === -1) return '−1';
   return String(c);
 }
+function signedScore(s) {
+  // 양수는 +N, 음수는 −N, 0은 0
+  if (s > 0) return '+' + s;
+  if (s < 0) return '−' + Math.abs(s);
+  return '0';
+}
 
-function evalFormula(slots) {
+function evalFormulaRaw(slots) {
   const [_a, op1, _b, op2, _c] = slots;
   if (!isNum(_a) || !isOp(op1) || !isNum(_b) || !isOp(op2) || !isNum(_c)) return null;
   const a = toNum(_a), b = toNum(_b), c = toNum(_c);
@@ -324,6 +330,13 @@ function evalFormula(slots) {
       return op2 === '+' ? left + c : left - c;
     }
   } catch(e) { return 0; }
+}
+
+function evalFormula(slots) {
+  const raw = evalFormulaRaw(slots);
+  if (raw === null) return null;
+  // 소수점은 반올림 (음수도 .5는 0에서 먼 쪽으로: -2.5 → -3)
+  return raw < 0 ? -Math.round(-raw) : Math.round(raw);
 }
 
 function generateCode() {
@@ -676,7 +689,7 @@ function renderReveal(data) {
   const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
   const boxClass = owner === 'p1' ? 'p1' : 'p2';
   document.getElementById('r-score-area').innerHTML =
-    `<div class="reveal-score-box ${boxClass}" style="margin-top: 12px; padding: 14px; font-size: 15px;">${ownerName} +${score}점</div>`;
+    `<div class="reveal-score-box ${boxClass}" style="margin-top: 12px; padding: 14px; font-size: 15px;">${ownerName} ${signedScore(score)}점</div>`;
 
   renderHistory('r-history', data.history);
 
@@ -755,7 +768,7 @@ function renderHistory(elId, history) {
   let html = '<div class="history"><div class="history-title">라운드 기록</div>';
   history.forEach(h => {
     const who = h.ownerName ? `<span style="color:#a78bfa;">${h.ownerName}</span>` : '';
-    html += `<div class="history-row"><span>R${h.round}</span><span>${who} 득점</span><span style="font-weight:700;">+${h.score}</span></div>`;
+    html += `<div class="history-row"><span>R${h.round}</span><span>${who} 득점</span><span style="font-weight:700;">${signedScore(h.score)}</span></div>`;
   });
   html += '</div>';
   document.getElementById(elId).innerHTML = html;
