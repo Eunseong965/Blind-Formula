@@ -506,7 +506,7 @@ function renderGame(data) {
       }
       if (isMyTurn) {
         div.dataset.slotIdx = i;
-        div.addEventListener('click', () => placeCard(i, data));
+        div.addEventListener('click', () => placeCard(i));
       }
     }
     slotsEl.appendChild(div);
@@ -548,16 +548,22 @@ function renderGame(data) {
   renderHistory('g-history', data.history);
 }
 
-async function placeCard(slotIdx, data) {
-  if (data.currentTurn !== myRole) return;
+async function placeCard(slotIdx) {
   if (localSelectedCard === null) { showGameMsg('먼저 카드를 선택하세요.', 'warn'); return; }
+
+  // Firebase에서 항상 최신 데이터를 읽어옴
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = normalizeData(snap.val());
+
+  if (data.currentTurn !== myRole) { showGameMsg('내 차례가 아닙니다.', 'warn'); return; }
+  if (data.slots[slotIdx] !== null && data.slots[slotIdx] !== undefined) { showGameMsg('이미 카드가 있는 자리입니다.', 'warn'); return; }
 
   const isNumSlot = slotType(slotIdx) === 'num';
   const cardIsNum = isNum(localSelectedCard);
   const cardIsOp = isOp(localSelectedCard);
   if (isNumSlot && !cardIsNum) { showGameMsg('숫자 자리에는 숫자 카드만!', 'error'); return; }
   if (!isNumSlot && !cardIsOp) { showGameMsg('기호 자리에는 기호 카드만!', 'error'); return; }
-  if (data.slots[slotIdx] !== null && data.slots[slotIdx] !== undefined) return;
 
   const newSlots = [...data.slots];
   const newSlotOwner = [...data.slotOwner];
