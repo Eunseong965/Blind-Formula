@@ -112,6 +112,8 @@
   .disguise-opts { display: flex; flex-wrap: wrap; gap: 6px; }
   .disguise-opt { font-size: 12px; padding: 6px 12px; border-radius: 8px; background: #14131c; border: 1px solid #2a2740; color: #c8c4dc; cursor: pointer; }
   .disguise-opt.sel { background: #be123c; color: #fff; border-color: #be123c; }
+  .disguise-opt.real { border-color: #fb718566; }
+  .disguise-opt.real.sel { background: #7c3aed; border-color: #7c3aed; }
 
   /* 추리 화면 */
   .guess-field { margin-bottom: 14px; }
@@ -151,7 +153,7 @@
       <h2>게임 소개</h2>
       <div style="font-size:12.5px; line-height:1.8; color:#9893ac;">
         5명 중 1명은 <b style="color:#fb7185;">도플갱어</b> — 네 학생의 정보(성별·나이·보석·시크릿넘버)를 뒤섞은 가짜.<br>
-        도플갱어는 매번 한 사람으로 <b>둔갑</b>해 채팅하며, 학생들의 프로필을 맞혀 감염시킨다.<br>
+        도플갱어는 누군가로 <b>둔갑</b>해 채팅하며(대상을 바꿔가며), 학생들의 프로필을 맞혀 감염시킨다.<br>
         학생들은 채팅으로 단서를 모아 <b style="color:#818cf8;">도플갱어의 정체와 가짜 프로필 5가지</b>를 추리해야 한다.<br>
         투표는 없다. 오직 추리만이 진실에 닿는다.
       </div>
@@ -344,6 +346,7 @@ function leaveRoom() {
   myRoleCache = null;
   lastDisguiseRender = '';
   if (roundTimerInterval) { clearInterval(roundTimerInterval); roundTimerInterval = null; }
+  if (disguiseCooldownTimer) { clearTimeout(disguiseCooldownTimer); disguiseCooldownTimer = null; }
   timerEndsAt = 0;
   settling = false;
   showScreen('lobby');
@@ -644,50 +647,69 @@ async function settleRound() {
 
 
 let lastDisguiseRender = '';
+let disguiseCooldownTimer = null;
+const DISGUISE_COOLDOWN = 10000; // 둔갑 대상 변경 쿨다운 10초
+
 function renderDoppelPanel(g) {
   const panel = document.getElementById('doppel-panel');
   panel.style.display = 'block';
 
-  // 둔갑 정보: { seat, round } — 이번 라운드에 이미 정했으면 고정
+  // 둔갑 정보: { seat, at }. seat===mySeat 이면 '본모습' 상태, 그 외는 둔갑 대상.
   const dis = g.disguise && g.disguise[mySeat];
-  const lockedThisRound = dis && dis.round === g.round;
-  const cur = dis ? dis.seat : -1;
+  const cur = dis ? dis.seat : -1;            // -1=미선택, mySeat=본모습, 그외=둔갑대상
+  const isReal = (cur === mySeat);            // 본모습 여부
+  const changedAt = dis ? (dis.at || 0) : 0;
+  const remain = Math.max(0, DISGUISE_COOLDOWN - (Date.now() - changedAt));
+  const onCooldown = remain > 0;
 
-  // 렌더 키 (상태 안 바뀌면 다시 안 그림 — 깜빡임 방지)
-  const renderKey = `${cur}|${lockedThisRound}|${g.round}`;
+  const renderKey = `${cur}|${onCooldown ? 'cd'+Math.ceil(remain/500) : 'ready'}`;
   if (renderKey === lastDisguiseRender && panel.innerHTML !== '') return;
   lastDisguiseRender = renderKey;
 
-  if (lockedThisRound) {
-    // 이미 이 라운드 둔갑 확정 → 변경 불가, 표시만
-    panel.innerHTML = `<div class="doppel-disguise">
-      <div class="dlabel">🎭 이번 라운드 둔갑 대상: <b style="color:#fff;">${seatNames[cur]}</b> (라운드 종료까지 고정)</div>
-    </div>`;
-    return;
-  }
-
-  // 아직 안 정함 → 선택 가능
-  let opts = '';
+  // 본모습/둔갑 대상 버튼들 (본모습 = 내 좌석)
+  let opts = `<div class="disguise-opt real ${isReal ? 'sel' : ''}" data-seat="${mySeat}">본모습 (${seatNames[mySeat]})</div>`;
   for (let i = 0; i < 5; i++) {
     if (i === mySeat) continue;
-    opts += `<div class="disguise-opt" data-seat="${i}">${seatNames[i]}</div>`;
+    const isCur = (i === cur);
+    // 둔갑 대상끼리 갈아탈 때만 쿨다운. 본모습→둔갑 전환은 자유
+    const disabled = onCooldown && !isCur && !isReal;
+    opts += `<div class="disguise-opt ${isCur ? 'sel' : ''}" data-seat="${i}" ${disabled ? 'data-disabled="1"' : ''} style="${disabled ? 'opacity:0.35;cursor:default;' : ''}">${seatNames[i]}</div>`;
   }
+
+  let label;
+  if (cur === -1) label = '🎭 본모습으로 말하거나, 둔갑할 대상을 고르세요';
+  else if (isReal) label = `⚠ <b style="color:#fb7185;">본모습</b>으로 말하는 중 — 내 이름으로 발언됩니다 (위험!)`;
+  else label = `🎭 <b style="color:#fff;">${seatNames[cur]}</b>(으)로 둔갑 중`;
+
+  const cdText = (onCooldown && !isReal) ? `<div style="font-size:11px;color:#fb7185;margin-top:8px;">대상 변경 쿨다운 ${(remain/1000).toFixed(1)}초</div>` : '';
+
   panel.innerHTML = `<div class="doppel-disguise">
-    <div class="dlabel">🎭 둔갑 대상을 고르세요 — 한 번 정하면 이번 라운드 동안 고정됩니다</div>
+    <div class="dlabel">${label}</div>
     <div class="disguise-opts">${opts}</div>
+    ${cdText}
   </div>`;
+
   panel.querySelectorAll('.disguise-opt').forEach(el => {
     el.addEventListener('click', async () => {
+      if (el.dataset.disabled) return;
       const seat = parseInt(el.dataset.seat);
-      // 최신 상태 재확인 — 이미 이 라운드에 정해졌으면 무시
-      const snap = await get(ref(db, 'doppel/' + roomCode + '/game'));
-      if (!snap.exists()) return;
-      const cg = snap.val();
-      const cd = cg.disguise && cg.disguise[mySeat];
-      if (cd && cd.round === cg.round) return; // 이미 고정됨
-      await update(roomRef, { [`game/disguise/${mySeat}`]: { seat, round: cg.round } });
+      if (seat === cur) return; // 이미 그 상태
+      // 둔갑 대상끼리 갈아탈 때만 쿨다운 체크 (본모습 관련 전환은 자유)
+      const goingToReal = (seat === mySeat);
+      const comingFromReal = isReal;
+      if (!goingToReal && !comingFromReal) {
+        const snap = await get(ref(db, 'doppel/' + roomCode + '/game/disguise/' + mySeat));
+        const cd = snap.exists() ? snap.val() : null;
+        if (cd && cd.at && cd.seat !== mySeat && Date.now() - cd.at < DISGUISE_COOLDOWN) return;
+      }
+      await update(roomRef, { [`game/disguise/${mySeat}`]: { seat, at: Date.now() } });
     });
   });
+
+  if (disguiseCooldownTimer) { clearTimeout(disguiseCooldownTimer); disguiseCooldownTimer = null; }
+  if (onCooldown && !isReal) {
+    disguiseCooldownTimer = setTimeout(() => { if (gameCache) renderDoppelPanel(gameCache); }, 500);
+  }
 }
 
 function renderChatLog(messages) {
@@ -733,12 +755,10 @@ async function sendMessage() {
   let displaySeat = mySeat;
   if (myRoleCache && myRoleCache.role === 'doppel') {
     // 도플갱어는 둔갑 대상으로 표시 — 대상 미선택이면 막기
-    const snap = await get(ref(db, 'doppel/' + roomCode + '/game'));
-    if (!snap.exists()) return;
-    const cg = snap.val();
-    const dis = cg.disguise && cg.disguise[mySeat];
-    if (!dis || dis.round !== cg.round) {
-      document.getElementById('chat-status').textContent = '둔갑 대상을 먼저 선택하세요.';
+    const snap = await get(ref(db, 'doppel/' + roomCode + '/game/disguise/' + mySeat));
+    const dis = snap.exists() ? snap.val() : null;
+    if (!dis || dis.seat === undefined || dis.seat < 0) {
+      document.getElementById('chat-status').textContent = '본모습 또는 둔갑 대상을 먼저 선택하세요.';
       return;
     }
     displaySeat = dis.seat;
