@@ -346,7 +346,8 @@ function leaveRoom() {
   myRoleCache = null;
   lastDisguiseRender = '';
   if (roundTimerInterval) { clearInterval(roundTimerInterval); roundTimerInterval = null; }
-  if (disguiseCooldownTimer) { clearTimeout(disguiseCooldownTimer); disguiseCooldownTimer = null; }
+  if (doppelTickTimer) { clearTimeout(doppelTickTimer); doppelTickTimer = null; }
+  realBalance = REAL_START; lastTick = 0; isRealOn = false;
   timerEndsAt = 0;
   settling = false;
   showScreen('lobby');
@@ -647,69 +648,110 @@ async function settleRound() {
 
 
 let lastDisguiseRender = '';
-let disguiseCooldownTimer = null;
-const DISGUISE_COOLDOWN = 10000; // 둔갑 대상 변경 쿨다운 10초
+let doppelTickTimer = null;
+const DISGUISE_COOLDOWN = 10000;  // 둔갑 대상끼리 변경 쿨다운 10초
+const REAL_START = 30000;         // 본모습 시작 잔액 30초
+const CHARGE_RATIO = 10;          // 둔갑 10초당 본모습 1초 충전
+
+// 로컬 상태 (도플 본인만 추적)
+let realBalance = REAL_START;     // 본모습 잔액(ms)
+let lastTick = 0;                 // 마지막 계산 시각
+let isRealOn = false;             // 본모습 켜짐 여부
 
 function renderDoppelPanel(g) {
   const panel = document.getElementById('doppel-panel');
   panel.style.display = 'block';
 
-  // 둔갑 정보: { seat, at }. seat===mySeat 이면 '본모습' 상태, 그 외는 둔갑 대상.
   const dis = g.disguise && g.disguise[mySeat];
   const cur = dis ? dis.seat : -1;            // -1=미선택, mySeat=본모습, 그외=둔갑대상
-  const isReal = (cur === mySeat);            // 본모습 여부
+  const isReal = (cur === mySeat);
   const changedAt = dis ? (dis.at || 0) : 0;
-  const remain = Math.max(0, DISGUISE_COOLDOWN - (Date.now() - changedAt));
-  const onCooldown = remain > 0;
+  const now = Date.now();
+  const cdRemain = Math.max(0, DISGUISE_COOLDOWN - (now - changedAt));
+  const onCooldown = cdRemain > 0 && !isReal;
 
-  const renderKey = `${cur}|${onCooldown ? 'cd'+Math.ceil(remain/500) : 'ready'}`;
-  if (renderKey === lastDisguiseRender && panel.innerHTML !== '') return;
-  lastDisguiseRender = renderKey;
+  // 잔액 갱신: 본모습이면 소모, 둔갑이면 충전
+  if (lastTick > 0) {
+    const dt = now - lastTick;
+    if (isReal) {
+      realBalance -= dt;                       // 본모습: 1:1 소모
+    } else if (cur >= 0) {
+      realBalance += dt / CHARGE_RATIO;         // 둔갑: 10:1 충전
+    }
+    realBalance = Math.max(0, Math.min(REAL_START, realBalance));
+  }
+  lastTick = now;
+  isRealOn = isReal;
 
-  // 본모습/둔갑 대상 버튼들 (본모습 = 내 좌석)
-  let opts = `<div class="disguise-opt real ${isReal ? 'sel' : ''}" data-seat="${mySeat}">본모습 (${seatNames[mySeat]})</div>`;
+  // 본모습 잔액 소진 → 강제로 둔갑 복귀 유도
+  if (isReal && realBalance <= 0) {
+    // 마지막 둔갑 대상으로 자동 복귀(없으면 미선택)
+    const fallback = (dis && dis.prevSeat !== undefined && dis.prevSeat !== mySeat) ? dis.prevSeat : -1;
+    realBalance = 0;
+    if (fallback >= 0) {
+      update(roomRef, { [`game/disguise/${mySeat}`]: { seat: fallback, at: now } });
+    } else {
+      update(roomRef, { [`game/disguise/${mySeat}`]: { seat: -1, at: now } });
+    }
+  }
+
+  const balSec = (realBalance/1000).toFixed(1);
+  const canReal = realBalance > 0;
+
+  let opts = `<div class="disguise-opt real ${isReal ? 'sel' : ''}" data-seat="${mySeat}" ${canReal ? '' : 'data-disabled="1"'} style="${canReal ? '' : 'opacity:0.35;cursor:default;'}">본모습 (${seatNames[mySeat]})</div>`;
   for (let i = 0; i < 5; i++) {
     if (i === mySeat) continue;
     const isCur = (i === cur);
-    // 둔갑 대상끼리 갈아탈 때만 쿨다운. 본모습→둔갑 전환은 자유
-    const disabled = onCooldown && !isCur && !isReal;
+    const disabled = onCooldown && !isCur;
     opts += `<div class="disguise-opt ${isCur ? 'sel' : ''}" data-seat="${i}" ${disabled ? 'data-disabled="1"' : ''} style="${disabled ? 'opacity:0.35;cursor:default;' : ''}">${seatNames[i]}</div>`;
   }
 
-  let label;
-  if (cur === -1) label = '🎭 본모습으로 말하거나, 둔갑할 대상을 고르세요';
-  else if (isReal) label = `⚠ <b style="color:#fb7185;">본모습</b>으로 말하는 중 — 내 이름으로 발언됩니다 (위험!)`;
+  let label, sub = '';
+  if (cur === -1) label = '🎭 둔갑할 대상을 고르세요';
+  else if (isReal) label = `⚠ <b style="color:#fb7185;">본모습</b> — 내 이름으로 발언됩니다`;
   else label = `🎭 <b style="color:#fff;">${seatNames[cur]}</b>(으)로 둔갑 중`;
 
-  const cdText = (onCooldown && !isReal) ? `<div style="font-size:11px;color:#fb7185;margin-top:8px;">대상 변경 쿨다운 ${(remain/1000).toFixed(1)}초</div>` : '';
+  // 잔액 게이지
+  const pct = Math.floor(realBalance / REAL_START * 100);
+  const barColor = isReal ? '#fb7185' : '#7c3aed';
+  sub = `<div style="margin-top:8px;">
+    <div style="font-size:11px;color:#9893ac;">본모습 잔액 ${balSec}초 ${isReal ? '(소모 중)' : '(둔갑 시 충전)'}</div>
+    <div style="height:4px;background:#2a2740;border-radius:2px;margin-top:3px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${barColor};transition:width 0.3s;"></div></div>
+  </div>`;
+  if (onCooldown) sub += `<div style="font-size:11px;color:#fb7185;margin-top:6px;">대상 변경 쿨다운 ${(cdRemain/1000).toFixed(1)}초</div>`;
 
   panel.innerHTML = `<div class="doppel-disguise">
     <div class="dlabel">${label}</div>
     <div class="disguise-opts">${opts}</div>
-    ${cdText}
+    ${sub}
   </div>`;
 
   panel.querySelectorAll('.disguise-opt').forEach(el => {
     el.addEventListener('click', async () => {
       if (el.dataset.disabled) return;
       const seat = parseInt(el.dataset.seat);
-      if (seat === cur) return; // 이미 그 상태
-      // 둔갑 대상끼리 갈아탈 때만 쿨다운 체크 (본모습 관련 전환은 자유)
-      const goingToReal = (seat === mySeat);
-      const comingFromReal = isReal;
-      if (!goingToReal && !comingFromReal) {
-        const snap = await get(ref(db, 'doppel/' + roomCode + '/game/disguise/' + mySeat));
-        const cd = snap.exists() ? snap.val() : null;
-        if (cd && cd.at && cd.seat !== mySeat && Date.now() - cd.at < DISGUISE_COOLDOWN) return;
+      if (seat === cur) return;
+      if (seat === mySeat) {
+        // 본모습 켜기 (잔액 있어야)
+        if (realBalance <= 0) return;
+        // 직전 둔갑 대상 기억 (본모습 종료 후 복귀용)
+        const prevSeat = (cur >= 0 && cur !== mySeat) ? cur : -1;
+        await update(roomRef, { [`game/disguise/${mySeat}`]: { seat: mySeat, at: Date.now(), prevSeat } });
+      } else {
+        // 둔갑 대상 선택 — 쿨다운 체크 (본모습에서 나올 땐 면제)
+        if (!isReal) {
+          const snap = await get(ref(db, 'doppel/' + roomCode + '/game/disguise/' + mySeat));
+          const cd = snap.exists() ? snap.val() : null;
+          if (cd && cd.at && cd.seat !== mySeat && Date.now() - cd.at < DISGUISE_COOLDOWN) return;
+        }
+        await update(roomRef, { [`game/disguise/${mySeat}`]: { seat, at: Date.now() } });
       }
-      await update(roomRef, { [`game/disguise/${mySeat}`]: { seat, at: Date.now() } });
     });
   });
 
-  if (disguiseCooldownTimer) { clearTimeout(disguiseCooldownTimer); disguiseCooldownTimer = null; }
-  if (onCooldown && !isReal) {
-    disguiseCooldownTimer = setTimeout(() => { if (gameCache) renderDoppelPanel(gameCache); }, 500);
-  }
+  // 1초마다 갱신 (잔액 게이지·카운트다운)
+  if (doppelTickTimer) { clearTimeout(doppelTickTimer); doppelTickTimer = null; }
+  doppelTickTimer = setTimeout(() => { if (gameCache) { lastDisguiseRender = ''; renderDoppelPanel(gameCache); } }, 1000);
 }
 
 function renderChatLog(messages) {
@@ -754,11 +796,15 @@ async function sendMessage() {
   // 표시될 좌석 결정
   let displaySeat = mySeat;
   if (myRoleCache && myRoleCache.role === 'doppel') {
-    // 도플갱어는 둔갑 대상으로 표시 — 대상 미선택이면 막기
     const snap = await get(ref(db, 'doppel/' + roomCode + '/game/disguise/' + mySeat));
     const dis = snap.exists() ? snap.val() : null;
     if (!dis || dis.seat === undefined || dis.seat < 0) {
-      document.getElementById('chat-status').textContent = '본모습 또는 둔갑 대상을 먼저 선택하세요.';
+      document.getElementById('chat-status').textContent = '둔갑 대상을 먼저 선택하세요.';
+      return;
+    }
+    // 본모습 발언은 잔액이 남아있을 때만
+    if (dis.seat === mySeat && realBalance <= 0) {
+      document.getElementById('chat-status').textContent = '본모습 잔액이 없습니다. 둔갑해서 충전하세요.';
       return;
     }
     displaySeat = dis.seat;
