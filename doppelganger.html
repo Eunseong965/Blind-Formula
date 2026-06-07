@@ -200,16 +200,11 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getDatabase(fbApp);
 
-// ===== 원본 학생 프로필 =====
-const STUDENTS = [
-  { name: '성연아', gender: '여성', age: 17, gem: '사파이어', secret: 913 },
-  { name: '장유현', gender: '남성', age: 18, gem: '흑요석',  secret: 106 },
-  { name: '유소연', gender: '여성', age: 17, gem: '로즈쿼츠', secret: 302 },
-  { name: '배재욱', gender: '남성', age: 18, gem: '루비',    secret: 804 },
-];
+// ===== 원본 학생 프로필 (나이는 한국 나이, 시크릿 1~10000) =====
+const STUDENT_NAMES = ['성연아', '장유현', '유소연', '배재욱'];
 const GENDERS = ['남성', '여성'];
-const AGES = [17, 18];
-const GEMS = ['사파이어', '흑요석', '로즈쿼츠', '루비'];
+const AGES = [17, 18, 19];
+const GEMS = ['사파이어', '흑요석', '에메랄드', '가넷', '루비', '자수정', '토파즈', '오팔', '다이아몬드', '진주'];
 const ROUND_MS = 180000; // 라운드당 3분
 
 // ===== 온라인 상태 =====
@@ -303,6 +298,14 @@ function leaveRoom() {
     update(roomRef, { [`seats/${mySeat}`]: '', [`presence/${mySeat}`]: false }).catch(()=>{});
   }
   roomListener = null; roomRef = null; roomCode = ''; mySeat = -1; isHost = false;
+  // 게임 상태 플래그 정리 (재입장 대비)
+  roleRendered = false;
+  chatEntered = false;
+  myRoleCache = null;
+  lastDisguiseRender = '';
+  if (roundTimerInterval) { clearInterval(roundTimerInterval); roundTimerInterval = null; }
+  timerEndsAt = 0;
+  settling = false;
   showScreen('lobby');
 }
 
@@ -357,12 +360,22 @@ function renderWait(data) {
 
 // ===== 역할/프로필 분배 (방장이 실행) =====
 function buildGame(seats) {
+  // 이번 게임의 학생 4명 프로필을 랜덤 생성 (매 게임 달라짐)
+  const rand = arr => arr[Math.floor(Math.random()*arr.length)];
+  const students = STUDENT_NAMES.map(name => ({
+    name,
+    gender: rand(GENDERS),
+    age: rand(AGES),
+    gem: rand(GEMS),
+    secret: Math.floor(Math.random()*10000) + 1, // 1~10000
+  }));
+
   // 5명 중 1명 도플갱어, 나머지 4명에 학생 배정
   const order = [0,1,2,3,4].sort(() => Math.random()-0.5);
   const doppelSeat = order[0];
   const studentSeats = order.slice(1); // 4명
 
-  // 학생 4명에게 성연아/장유현/유소연/배재욱 랜덤 배정
+  // 학생 4명에게 인물 랜덤 배정
   const studentAssign = [0,1,2,3].sort(() => Math.random()-0.5);
   const roles = {}; // seat -> { role, studentIdx }
   studentSeats.forEach((seat, k) => {
@@ -373,24 +386,25 @@ function buildGame(seats) {
   const pick = () => Math.floor(Math.random()*4);
   const gSrc = pick(), aSrc = pick(), jSrc = pick(), sSrc = pick();
   const doppelProfile = {
-    gender: STUDENTS[gSrc].gender, genderSrc: gSrc,
-    age: STUDENTS[aSrc].age, ageSrc: aSrc,
-    gem: STUDENTS[jSrc].gem, gemSrc: jSrc,
-    secret: STUDENTS[sSrc].secret, secretSrc: sSrc,
+    gender: students[gSrc].gender, genderSrc: gSrc,
+    age: students[aSrc].age, ageSrc: aSrc,
+    gem: students[jSrc].gem, gemSrc: jSrc,
+    secret: students[sSrc].secret, secretSrc: sSrc,
   };
   roles[doppelSeat] = { role: 'doppel', profile: doppelProfile };
 
   return {
     phase: 'role',
+    students,              // 이번 게임의 학생 프로필 (랜덤)
     doppelSeat,
     roles,
     round: 1,
     maxRounds: 4,
-    roundEndsAt: 0,        // 채팅 시작 시 설정
-    infected: { 0:false,1:false,2:false,3:false,4:false }, // 도플갱어화 여부
+    roundEndsAt: 0,
+    infected: { 0:false,1:false,2:false,3:false,4:false },
     readyCount: 0,
     ready: { 0:false,1:false,2:false,3:false,4:false },
-    winner: null,          // 'students' | 'doppel'
+    winner: null,
   };
 }
 
@@ -403,14 +417,17 @@ async function startGameAsHost() {
 }
 
 // ===== 역할 공개 화면 =====
+let roleRendered = false;
 function renderRole(data) {
   showScreen('role');
+  if (roleRendered) return; // 이미 그렸으면 재생성 안 함 (깜빡임/상태 꼬임 방지)
+  roleRendered = true;
   const g = data.game;
   const myRole = g.roles[mySeat];
   const el = document.getElementById('role-content');
 
   if (myRole.role === 'student') {
-    const s = STUDENTS[myRole.studentIdx];
+    const s = g.students[myRole.studentIdx];
     el.innerHTML = `
       <div class="role-card student">
         <div class="role-label">STUDENT</div>
@@ -440,10 +457,10 @@ function renderRole(data) {
       <div class="card-box">
         <h2>내 가짜 프로필 (출처)</h2>
         <table class="profile-table">
-          <tr><td>성별</td><td>${p.gender}<span class="src-tag">← ${STUDENTS[p.genderSrc].name}</span></td></tr>
-          <tr><td>나이</td><td>${p.age}세<span class="src-tag">← ${STUDENTS[p.ageSrc].name}</span></td></tr>
-          <tr><td>보석</td><td>${p.gem}<span class="src-tag">← ${STUDENTS[p.gemSrc].name}</span></td></tr>
-          <tr><td>시크릿 넘버</td><td>${p.secret}<span class="src-tag">← ${STUDENTS[p.secretSrc].name}</span></td></tr>
+          <tr><td>성별</td><td>${p.gender}<span class="src-tag">← ${STUDENT_NAMES[p.genderSrc]}</span></td></tr>
+          <tr><td>나이</td><td>${p.age}세<span class="src-tag">← ${STUDENT_NAMES[p.ageSrc]}</span></td></tr>
+          <tr><td>보석</td><td>${p.gem}<span class="src-tag">← ${STUDENT_NAMES[p.gemSrc]}</span></td></tr>
+          <tr><td>시크릿 넘버</td><td>${p.secret}<span class="src-tag">← ${STUDENT_NAMES[p.secretSrc]}</span></td></tr>
         </table>
         <div style="font-size:11.5px; color:#6b6878; margin-top:10px; line-height:1.5;">
           ※ 각 정보가 어느 학생에게서 왔는지는 알지만, 그 학생이 지금 누구인지는 모릅니다.
@@ -471,10 +488,12 @@ document.getElementById('btn-role-ready').addEventListener('click', async () => 
 // ===== 채팅 (3단계) =====
 let chatEntered = false;
 let myRoleCache = null;       // 내 역할 정보 캐시
+let gameCache = null;         // 최신 game 데이터 캐시 (추리 폼 등에서 사용)
 let seatNames = [];           // 좌석별 표시 이름
 
 function enterChat(data) {
   const g = data.game;
+  gameCache = g;
   seatNames = [0,1,2,3,4].map(i => data.seats[i] || `P${i+1}`);
   myRoleCache = g.roles[mySeat];
   const amInfected = g.infected && g.infected[mySeat];
@@ -487,7 +506,7 @@ function enterChat(data) {
 
   // 헤더
   document.getElementById('chat-round').textContent = g.round || 1;
-  let roleText = myRoleCache.role === 'doppel' ? '도플갱어' : `학생 (${STUDENTS[myRoleCache.studentIdx].name})`;
+  let roleText = myRoleCache.role === 'doppel' ? '도플갱어' : `학생 (${STUDENT_NAMES[myRoleCache.studentIdx]})`;
   if (amInfected) roleText = '🔴 도플갱어화됨';
   document.getElementById('chat-myrole').textContent = roleText;
 
@@ -580,27 +599,49 @@ async function settleRound() {
 }
 
 
-let lastDisguiseSel = -2;
+let lastDisguiseRender = '';
 function renderDoppelPanel(g) {
   const panel = document.getElementById('doppel-panel');
   panel.style.display = 'block';
-  const cur = (g.disguise && g.disguise[mySeat] !== undefined) ? g.disguise[mySeat] : -1;
-  // 선택값이 안 바뀌었으면 다시 안 그림 (깜빡임 방지)
-  if (cur === lastDisguiseSel && panel.innerHTML !== '') return;
-  lastDisguiseSel = cur;
+
+  // 둔갑 정보: { seat, round } — 이번 라운드에 이미 정했으면 고정
+  const dis = g.disguise && g.disguise[mySeat];
+  const lockedThisRound = dis && dis.round === g.round;
+  const cur = dis ? dis.seat : -1;
+
+  // 렌더 키 (상태 안 바뀌면 다시 안 그림 — 깜빡임 방지)
+  const renderKey = `${cur}|${lockedThisRound}|${g.round}`;
+  if (renderKey === lastDisguiseRender && panel.innerHTML !== '') return;
+  lastDisguiseRender = renderKey;
+
+  if (lockedThisRound) {
+    // 이미 이 라운드 둔갑 확정 → 변경 불가, 표시만
+    panel.innerHTML = `<div class="doppel-disguise">
+      <div class="dlabel">🎭 이번 라운드 둔갑 대상: <b style="color:#fff;">${seatNames[cur]}</b> (라운드 종료까지 고정)</div>
+    </div>`;
+    return;
+  }
+
+  // 아직 안 정함 → 선택 가능
   let opts = '';
   for (let i = 0; i < 5; i++) {
     if (i === mySeat) continue;
-    opts += `<div class="disguise-opt ${cur === i ? 'sel' : ''}" data-seat="${i}">${seatNames[i]}</div>`;
+    opts += `<div class="disguise-opt" data-seat="${i}">${seatNames[i]}</div>`;
   }
   panel.innerHTML = `<div class="doppel-disguise">
-    <div class="dlabel">🎭 둔갑 대상 — 이 사람 이름으로 채팅됩니다 (라운드 중 고정)</div>
+    <div class="dlabel">🎭 둔갑 대상을 고르세요 — 한 번 정하면 이번 라운드 동안 고정됩니다</div>
     <div class="disguise-opts">${opts}</div>
   </div>`;
   panel.querySelectorAll('.disguise-opt').forEach(el => {
     el.addEventListener('click', async () => {
       const seat = parseInt(el.dataset.seat);
-      await update(roomRef, { [`game/disguise/${mySeat}`]: seat });
+      // 최신 상태 재확인 — 이미 이 라운드에 정해졌으면 무시
+      const snap = await get(ref(db, 'doppel/' + roomCode + '/game'));
+      if (!snap.exists()) return;
+      const cg = snap.val();
+      const cd = cg.disguise && cg.disguise[mySeat];
+      if (cd && cd.round === cg.round) return; // 이미 고정됨
+      await update(roomRef, { [`game/disguise/${mySeat}`]: { seat, round: cg.round } });
     });
   });
 }
@@ -648,13 +689,15 @@ async function sendMessage() {
   let displaySeat = mySeat;
   if (myRoleCache && myRoleCache.role === 'doppel') {
     // 도플갱어는 둔갑 대상으로 표시 — 대상 미선택이면 막기
-    const snap = await get(ref(db, 'doppel/' + roomCode + '/game/disguise/' + mySeat));
-    const tgt = snap.exists() ? snap.val() : -1;
-    if (tgt === -1 || tgt === undefined) {
+    const snap = await get(ref(db, 'doppel/' + roomCode + '/game'));
+    if (!snap.exists()) return;
+    const cg = snap.val();
+    const dis = cg.disguise && cg.disguise[mySeat];
+    if (!dis || dis.round !== cg.round) {
       document.getElementById('chat-status').textContent = '둔갑 대상을 먼저 선택하세요.';
       return;
     }
-    displaySeat = tgt;
+    displaySeat = dis.seat;
   }
 
   input.value = '';
@@ -687,7 +730,7 @@ function renderGuess() {
 
   if (myRoleCache.role === 'student') {
     title.textContent = '도플갱어 추리';
-    // 도플갱어 후보 = 나 빼고 4명 (단, 이미 도플갱어화된 사람도 후보에서 제외해야 하지만 5단계에서)
+    // 도플갱어 후보 = 나를 제외한 4명
     let seatOpts = '';
     for (let i = 0; i < 5; i++) {
       if (i === mySeat) continue;
@@ -699,7 +742,7 @@ function renderGuess() {
       <div class="guess-field"><div class="glabel">성별</div><div class="guess-opts">${optBtns('gender', GENDERS)}</div></div>
       <div class="guess-field"><div class="glabel">나이</div><div class="guess-opts">${optBtns('age', AGES.map(a=>a+'세'), AGES)}</div></div>
       <div class="guess-field"><div class="glabel">보석</div><div class="guess-opts">${optBtns('gem', GEMS)}</div></div>
-      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', STUDENTS.map(s=>s.secret), STUDENTS.map(s=>s.secret))}</div></div>
+      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', gameCache.students.map(s=>s.secret), gameCache.students.map(s=>s.secret))}</div></div>
       <button class="btn-primary" id="btn-submit-guess">추리 제출</button>
       <div id="guess-result"></div>`;
   } else {
@@ -712,11 +755,11 @@ function renderGuess() {
     body.innerHTML = `
       <div class="msg warn" style="margin-bottom:1rem;">학생 한 명을 지목해 그의 원본 프로필 5가지를 맞히면 감염시킵니다!</div>
       <div class="guess-field"><div class="glabel">대상 플레이어</div><div class="guess-opts">${seatOpts}</div></div>
-      <div class="guess-field"><div class="glabel">인물</div><div class="guess-opts">${optBtns('person', STUDENTS.map(s=>s.name), [0,1,2,3])}</div></div>
+      <div class="guess-field"><div class="glabel">인물</div><div class="guess-opts">${optBtns('person', STUDENT_NAMES, [0,1,2,3])}</div></div>
       <div class="guess-field"><div class="glabel">성별</div><div class="guess-opts">${optBtns('gender', GENDERS)}</div></div>
       <div class="guess-field"><div class="glabel">나이</div><div class="guess-opts">${optBtns('age', AGES.map(a=>a+'세'), AGES)}</div></div>
       <div class="guess-field"><div class="glabel">보석</div><div class="guess-opts">${optBtns('gem', GEMS)}</div></div>
-      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', STUDENTS.map(s=>s.secret), STUDENTS.map(s=>s.secret))}</div></div>
+      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', gameCache.students.map(s=>s.secret), gameCache.students.map(s=>s.secret))}</div></div>
       <button class="btn-primary" id="btn-submit-guess">감염 시도</button>
       <div id="guess-result"></div>`;
   }
@@ -754,6 +797,14 @@ async function submitGuess() {
   const snap = await get(ref(db, 'doppel/' + roomCode + '/game'));
   if (!snap.exists()) return;
   const g = snap.val();
+  if (g.winner) return; // 이미 게임 종료
+
+  // 감염된 학생은 추리 제출 불가 (도플 진영이 됨)
+  if (role === 'student' && g.infected && g.infected[mySeat]) {
+    document.getElementById('guess-result').innerHTML = `<div class="msg error">도플갱어화되어 추리할 수 없습니다.</div>`;
+    document.getElementById('btn-submit-guess').style.display = 'none';
+    return;
+  }
 
   if (role === 'student') {
     const dSeat = g.doppelSeat;
@@ -780,7 +831,7 @@ async function submitGuess() {
     const targetRole = g.roles[targetSeat];
     let correct = 0, isStudent = (targetRole.role === 'student');
     if (isStudent) {
-      const s = STUDENTS[targetRole.studentIdx];
+      const s = g.students[targetRole.studentIdx];
       if (parseInt(guessSel.person) === targetRole.studentIdx) correct++;
       if (guessSel.gender === s.gender) correct++;
       if (parseInt(guessSel.age) === s.age) correct++;
