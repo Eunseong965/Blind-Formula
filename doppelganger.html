@@ -348,6 +348,7 @@ function leaveRoom() {
   if (roundTimerInterval) { clearInterval(roundTimerInterval); roundTimerInterval = null; }
   if (doppelTickTimer) { clearTimeout(doppelTickTimer); doppelTickTimer = null; }
   realBalance = REAL_START; lastTick = 0; isRealOn = false;
+  renderedMsgCount = 0;
   timerEndsAt = 0;
   settling = false;
   showScreen('lobby');
@@ -754,32 +755,36 @@ function renderDoppelPanel(g) {
   doppelTickTimer = setTimeout(() => { if (gameCache) { lastDisguiseRender = ''; renderDoppelPanel(gameCache); } }, 1000);
 }
 
-function renderChatLog(messages) {
-  const log = document.getElementById('chat-log');
-  // messages는 객체(푸시 키) 또는 배열 → 시간순 정렬
-  const arr = Object.values(messages || {}).sort((a,b) => (a.time||0) - (b.time||0));
-  let html = '';
-  for (const m of arr) {
-    if (m.sys) {
-      html += `<div class="chat-msg sys">${escapeHtml(m.text)}</div>`;
-      continue;
-    }
-    // 표시 이름 = displaySeat
-    const displayName = seatNames[m.displaySeat] || '?';
-    // 내가 보낸 메시지인지 (실제 sender 기준)
-    const isMine = (m.senderSeat === mySeat);
-    // 내가 둔갑당한 경우: displaySeat가 나인데 sender가 내가 아님 → 점선 표시(나만 구분)
-    const imposterOnMe = (m.displaySeat === mySeat && m.senderSeat !== mySeat);
-
-    let cls = isMine ? 'mine' : 'other';
-    if (imposterOnMe) cls = 'disguise-self'; // 내 이름 도용 메시지 (나에게만 점선)
-
-    html += `<div class="chat-msg ${cls}">
+let renderedMsgCount = 0;  // 이미 그린 메시지 수
+function buildMsgHtml(m) {
+  if (m.sys) return `<div class="chat-msg sys">${escapeHtml(m.text)}</div>`;
+  const displayName = seatNames[m.displaySeat] || '?';
+  const isMine = (m.senderSeat === mySeat);
+  const imposterOnMe = (m.displaySeat === mySeat && m.senderSeat !== mySeat);
+  let cls = isMine ? 'mine' : 'other';
+  if (imposterOnMe) cls = 'disguise-self';
+  return `<div class="chat-msg ${cls}">
       <div class="who">${escapeHtml(displayName)}${imposterOnMe ? ' ⚠' : ''}</div>
       ${escapeHtml(m.text)}
     </div>`;
+}
+
+function renderChatLog(messages) {
+  const log = document.getElementById('chat-log');
+  const arr = Object.values(messages || {}).sort((a,b) => (a.time||0) - (b.time||0));
+
+  if (arr.length >= renderedMsgCount && renderedMsgCount > 0) {
+    // 증분: 새로 늘어난 메시지만 추가 (전체 재생성 안 함)
+    let added = '';
+    for (let i = renderedMsgCount; i < arr.length; i++) added += buildMsgHtml(arr[i]);
+    if (added) log.insertAdjacentHTML('beforeend', added);
+  } else {
+    // 첫 렌더이거나 메시지가 줄어듦(새 게임 등) → 전체 재생성
+    let html = '';
+    for (const m of arr) html += buildMsgHtml(m);
+    log.innerHTML = html;
   }
-  log.innerHTML = html;
+  renderedMsgCount = arr.length;
   log.scrollTop = log.scrollHeight;
 }
 
