@@ -3,1409 +3,169 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>블라인드 수식전</title>
-<!--
-  ▼ 광고 연동 방법 (AdSense 승인 후)
-  1) 아래 주석을 풀고 ca-pub-XXXX 를 본인 게시자 ID로 교체
-  2) 각 .ad-slot 안의 <span class="ad-placeholder">...</span> 를
-     AdSense가 발급한 <ins class="adsbygoogle" ...></ins> 코드로 교체
-  3) 교체한 ins 바로 뒤에 <script>(adsbygoogle=window.adsbygoogle||[]).push({});</script> 추가
-
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
--->
+<title>게임 아케이드</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0f0f13; color: #e8e6f0; min-height: 100vh; }
+  html, body { height: 100%; }
+  body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0c0d12; color: #e8e6f0; overflow: hidden; }
 
-  .screen { display: none; min-height: 100vh; padding: 2rem 1rem; max-width: 480px; margin: 0 auto; }
-  .screen.active { display: flex; flex-direction: column; }
-
-  /* 로비 배경: 떠다니는 숫자 캔버스 */
-  #lobby-bg {
-    position: fixed; inset: 0; width: 100%; height: 100%;
-    z-index: 0; pointer-events: none; display: none;
+  /* 허브 화면 */
+  #hub {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 1.5rem;
+    z-index: 1; transition: opacity 0.25s;
   }
-  #lobby-bg.show { display: block; }
-  #screen-lobby { position: relative; z-index: 1; }
-  #screen-lobby > * { position: relative; z-index: 1; }
+  #hub.hidden { opacity: 0; pointer-events: none; }
 
-  h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; color: #f0eeff; }
-  h2 { font-size: 17px; font-weight: 600; color: #c8c4e0; margin-bottom: 12px; }
+  .hub-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 
-  .logo { font-size: 28px; font-weight: 800; color: #a78bfa; letter-spacing: -1px; margin-bottom: 6px; }
-  .sub { font-size: 13px; color: #6b6880; margin-bottom: 2rem; }
+  .hub-inner { position: relative; z-index: 2; width: 100%; max-width: 440px; text-align: center; }
+  .arcade-logo { font-size: 13px; letter-spacing: 5px; color: #6b6880; margin-bottom: 6px; text-transform: uppercase; }
+  .arcade-title { font-size: 32px; font-weight: 800; letter-spacing: -1px; margin-bottom: 2.5rem;
+    background: linear-gradient(120deg, #a78bfa, #4f8cff, #34d399); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
-  input[type=text] {
-    width: 100%; padding: 12px 14px; border-radius: 10px;
-    border: 1px solid #2a2740; background: #1a1826;
-    color: #e8e6f0; font-size: 15px; outline: none;
-    transition: border-color 0.15s;
+  .game-card {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: #15161f; border: 1px solid #23252f; border-radius: 16px;
+    padding: 1.4rem 1.5rem; margin-bottom: 1rem; transition: all 0.15s; position: relative; overflow: hidden;
   }
-  input[type=text]:focus { border-color: #7c6fcd; }
+  .game-card:hover { transform: translateY(-3px); border-color: #4f8cff; box-shadow: 0 8px 24px #0006; }
+  .game-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+  .game-card.blind::before { background: #a78bfa; }
+  .game-card.terr::before { background: #34d399; }
+  .gc-emoji { font-size: 26px; margin-bottom: 8px; }
+  .gc-title { font-size: 19px; font-weight: 800; margin-bottom: 4px; }
+  .gc-desc { font-size: 12.5px; color: #8b88a0; line-height: 1.5; }
+  .gc-meta { font-size: 11px; color: #5a5870; margin-top: 8px; }
 
-  button {
-    border: none; border-radius: 10px; padding: 12px 20px;
-    font-size: 14px; font-weight: 600; cursor: pointer;
-    transition: all 0.15s; font-family: inherit;
+  .hub-foot { font-size: 11px; color: #44425a; margin-top: 1.5rem; }
+
+  /* 게임 화면 (iframe 컨테이너) */
+  #player {
+    position: absolute; inset: 0; z-index: 5; display: none; flex-direction: column;
+    background: #0c0d12;
   }
-  .btn-primary { background: #7c6fcd; color: white; width: 100%; }
-  .btn-primary:hover { background: #6d61b8; }
-  .btn-primary:disabled { background: #3a3550; color: #6b6880; cursor: default; }
-  .btn-secondary { background: #1e1c2e; color: #a09cc0; border: 1px solid #2a2740; width: 100%; }
-  .btn-secondary:hover { background: #252338; }
-  .btn-danger { background: #c0392b; color: white; }
-  .btn-danger:hover { background: #a93226; }
-
-  .card { background: #1a1826; border: 1px solid #2a2740; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
-
-  .room-code { font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #a78bfa; text-align: center; padding: 1rem 0; }
-  .room-hint { font-size: 12px; color: #6b6880; text-align: center; margin-top: 4px; }
-
-  .tag { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-  .tag-green { background: #0d3320; color: #34d399; }
-  .tag-purple { background: #2e1f5e; color: #a78bfa; }
-
-  .score-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem; }
-  .score-box { background: #1a1826; border-radius: 12px; padding: 12px; text-align: center; border: 1px solid #2a2740; }
-  .score-box.p1 { border-color: #2563eb44; }
-  .score-box.p2 { border-color: #ea580c44; }
-  .score-name { font-size: 11px; color: #6b6880; margin-bottom: 4px; }
-  .score-val { font-size: 26px; font-weight: 700; }
-  .score-val.p1 { color: #60a5fa; }
-  .score-val.p2 { color: #fb923c; }
-  .score-detail { font-size: 10px; color: #4a4760; margin-top: 2px; }
-
-  .formula-board { background: #13111f; border: 1px solid #2a2740; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
-  .formula-slots { display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
-
-  .slot {
-    width: 52px; height: 58px; border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 17px; font-weight: 700; border: 2px dashed #3a3658;
-    background: #100e1a; color: #56527a; cursor: pointer;
-    transition: all 0.15s; position: relative;
+  #player.active { display: flex; }
+  .player-bar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: #15161f; border-bottom: 1px solid #23252f; flex-shrink: 0;
   }
-  .slot.num { background: #100e1a; }
-  .slot.op { background: #14111f; }
-  .slot.filled-mine { border-style: solid; border-width: 2px; border-color: #a78bfa; background: #3a2f6e; color: #ffffff; box-shadow: 0 0 0 1px #a78bfa44; }
-  .slot.filled-blind { border-style: solid; border-width: 2px; border-color: #5a4a8a; background: #2a2348; color: #8b7fc0; }
-  .slot.active-target { border-color: #34d399; border-style: solid; border-width: 2px; background: #14211c; box-shadow: 0 0 0 3px #34d39944; }
-  .slot.empty-hint { color: #56527a; font-size: 15px; }
-
-  .eq { font-size: 20px; color: #4a4760; padding: 0 4px; }
-  .result-preview { font-size: 20px; font-weight: 700; min-width: 44px; text-align: center; color: #a78bfa; }
-
-  .hand-section { background: #1a1826; border: 1px solid #2a2740; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
-  .hand { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
-
-  .hcard {
-    width: 48px; height: 56px; border-radius: 9px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 17px; font-weight: 700; cursor: pointer;
-    border: 2px solid #2a2740; background: #1a1826; color: #ffffff;
-    transition: all 0.12s; user-select: none;
+  .back-btn {
+    background: #23252f; border: none; color: #e8e6f0; border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
   }
-  .hcard.num-card { background: #1a2740; border-color: #3a5a8a; color: #93c5fd; }
-  .hcard.op-card { background: #2a1a10; border-color: #8a5a3a; color: #fcd9b8; }
-  .hcard:hover:not(.used) { transform: translateY(-3px); border-color: #a78bfa; box-shadow: 0 4px 12px #0008; }
-  .hcard.selected { border: 2px solid #34d399; background: #14302a; color: #6ee7b7; transform: translateY(-4px); box-shadow: 0 0 0 3px #34d39944; }
-  .hcard.used { opacity: 0.15; cursor: default; pointer-events: none; filter: grayscale(1); }
-
-  .msg { padding: 10px 14px; border-radius: 9px; font-size: 13px; margin-bottom: 10px; line-height: 1.5; }
-  .msg.info { background: #1e1c30; color: #8b88b0; }
-  .msg.success { background: #0d3320; color: #34d399; }
-  .msg.warn { background: #2e2010; color: #fbbf24; }
-  .msg.error { background: #2a1010; color: #f87171; }
-
-  .history { background: #13111f; border-radius: 10px; padding: 10px 14px; margin-bottom: 1rem; }
-  .history-title { font-size: 11px; color: #4a4760; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
-  .history-row { display: flex; justify-content: space-between; font-size: 12px; color: #6b6880; padding: 4px 0; border-bottom: 1px solid #1a1826; }
-  .history-row:last-child { border-bottom: none; }
-
-  .winner-box { background: #1a2e1a; border: 1px solid #34d39944; border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1rem; }
-  .winner-title { font-size: 26px; font-weight: 800; color: #34d399; margin-bottom: 6px; }
-  .winner-sub { font-size: 13px; color: #4a7a4a; }
-  .tie-box { background: #2e2a10; border: 1px solid #fbbf2444; border-radius: 14px; padding: 2rem; text-align: center; margin-bottom: 1rem; }
-  .tie-title { font-size: 26px; font-weight: 800; color: #fbbf24; }
-
-  .final-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem; }
-  .final-card { background: #1a1826; border: 1px solid #2a2740; border-radius: 12px; padding: 1rem; text-align: center; }
-
-  .waiting-anim { display: flex; gap: 6px; justify-content: center; margin: 1rem 0; }
-  .waiting-anim span { width: 8px; height: 8px; border-radius: 50%; background: #7c6fcd; animation: pulse 1.2s ease-in-out infinite; }
-  .waiting-anim span:nth-child(2) { animation-delay: 0.2s; }
-  .waiting-anim span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes pulse { 0%,80%,100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
-
-  .gap { height: 10px; }
-  .gap-lg { height: 20px; }
-  .flex-row { display: flex; gap: 8px; }
-  .flex-1 { flex: 1; }
-
-  .reveal-score-box { border-radius: 9px; padding: 10px; text-align: center; font-size: 13px; font-weight: 600; }
-  .reveal-score-box.p1 { background: #1e3a5f; color: #60a5fa; }
-  .reveal-score-box.p2 { background: #4a2010; color: #fb923c; }
-
-  .copy-btn { background: #2a2740; color: #a09cc0; border: none; border-radius: 7px; padding: 6px 12px; font-size: 12px; cursor: pointer; margin-left: 8px; }
-  .copy-btn:hover { background: #3a3550; }
-
-  .icon-btn { background: #1e1c2e; border: 1px solid #2a2740; border-radius: 8px; width: 32px; height: 32px; font-size: 15px; cursor: pointer; color: #a09cc0; display: inline-flex; align-items: center; justify-content: center; padding: 0; transition: all 0.12s; }
-  .icon-btn:hover { background: #2a2740; color: #e8e6f0; }
-
-  .modal-overlay { position: fixed; inset: 0; background: #000a; display: none; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
-  .modal-overlay.show { display: flex; }
-  .modal-box { background: #1a1826; border: 1px solid #2a2740; border-radius: 16px; padding: 1.5rem; max-width: 440px; width: 100%; max-height: 85vh; overflow-y: auto; }
-  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-  .modal-title { font-size: 18px; font-weight: 700; color: #f0eeff; }
-  .modal-close { background: none; border: none; font-size: 22px; color: #6b6880; cursor: pointer; padding: 0; width: 28px; height: 28px; }
-  .modal-close:hover { color: #e8e6f0; }
-  .rules-body { font-size: 13px; line-height: 1.7; color: #a09cc0; }
-  .rules-body h4 { color: #a78bfa; font-weight: 700; margin: 14px 0 6px; font-size: 13px; }
-  .rules-body h4:first-child { margin-top: 0; }
-  .rules-body p { margin-bottom: 4px; }
-  .rules-body code { color: #93c5fd; background: #13111f; padding: 1px 5px; border-radius: 4px; }
-  .rules-body strong { color: #fcd9b8; }
-  .confirm-btns { display: flex; gap: 10px; margin-top: 1.25rem; }
-  .confirm-btns button { flex: 1; }
-
-  /* 광고 자리 — 광고망 승인 후 ins 코드로 교체 */
-  .ad-slot { width: 100%; min-height: 90px; margin: 1rem 0; border: 1px dashed #2a2740; border-radius: 12px; background: #13111f; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  .ad-slot .ad-placeholder { font-size: 11px; color: #3a3658; letter-spacing: 1px; }
-
-  /* 러시안 룰렛 */
-  .revolver-area { text-align: center; margin: 2rem 0; }
-  .revolver { font-size: 80px; display: inline-block; transition: transform 0.1s; }
-  .revolver.spinning { animation: revolver-shake 0.12s linear infinite; }
-  @keyframes revolver-shake { 0%,100%{transform:rotate(-8deg);} 50%{transform:rotate(8deg);} }
-  .chamber-info { margin-top: 1rem; font-size: 14px; color: #a09cc0; }
-  .roulette-fire { font-size: 22px; font-weight: 800; color: #e24b4a; text-align: center; padding: 1.5rem; }
-  .roulette-safe { font-size: 22px; font-weight: 800; color: #34d399; text-align: center; padding: 1.5rem; }
+  .back-btn:hover { background: #2f3242; }
+  .player-name { font-size: 13px; color: #8b88a0; font-weight: 600; }
+  #game-frame { flex: 1; width: 100%; border: none; background: #0c0d12; }
 </style>
 </head>
 <body>
 
-<canvas id="lobby-bg"></canvas>
+<!-- 허브 (선택 화면) -->
+<div id="hub">
+  <canvas class="hub-bg" id="hub-bg"></canvas>
+  <div class="hub-inner">
+    <div class="arcade-logo">은성 아케이드</div>
+    <div class="arcade-title">게임 아케이드</div>
 
-<!-- 규칙 모달 (공통) -->
-<div class="modal-overlay" id="modal-rules">
-  <div class="modal-box">
-    <div class="modal-header">
-      <span class="modal-title">📖 게임 방법</span>
-      <button class="modal-close" id="modal-rules-close">×</button>
+    <div class="game-card blind" data-game="blind.html" data-name="블라인드 수식전">
+      <div class="gc-emoji">🃏</div>
+      <div class="gc-title">블라인드 수식전</div>
+      <div class="gc-desc">상대 카드를 모른 채 수식을 채워 점수를 겨루는 온라인 2인 두뇌 대전.</div>
+      <div class="gc-meta">온라인 2인 · 방 코드로 매칭</div>
     </div>
-    <div class="rules-body">
-      <h4>🎯 목표</h4>
-      <p>수식 <code>(숫자)(기호)(숫자)(기호)(숫자)</code> 의 결과값을 두고 겨루는 2인 대전. 각자 같은 카드 10장(+, −, ×, ÷, −2, −1, −1, 2, 1, 1)으로 시작.</p>
-      <h4>🔄 진행</h4>
-      <p>총 4라운드. 라운드마다 <strong>득점자(주인)</strong>가 정해져 — R1·R3은 방장, R2·R4는 참가자. 주인이 먼저 놓고, 둘이 번갈아 빈 칸을 채워 5장을 완성.</p>
-      <h4>⚔️ 공격과 방어</h4>
-      <p>완성된 수식의 결과값은 <strong>그 라운드 주인의 점수</strong>. 주인은 키우려 하고, 상대는 깎으려 방해. 음수면 주인 점수가 깎임.</p>
-      <h4>🙈 블라인드</h4>
-      <p>상대가 어느 칸에 무슨 카드를 놨는지 <strong>끝까지 안 보임</strong>. 오직 결과값만 공개. 상대 수를 추론하며 놔야 함.</p>
-      <h4>🏆 승리</h4>
-      <p>한 번 쓴 카드는 폐기. 4라운드 후 방장의 R1+R3 합 vs 참가자의 R2+R4 합을 비교해 높은 쪽 승리. 동점이면 무승부.</p>
-      <h4>⏱️ 제한 시간</h4>
-      <p>카드 한 장당 30초. 시간이 지나면 남은 카드 중 하나가 빈 칸에 자동 배치됨.</p>
-      <h4>🔫 러시안 룰렛</h4>
-      <p>한 게임(4라운드)이 끝나면 <strong>패자가 자기 머리에 한 발</strong>. 첫 게임은 약실 6칸 중 실탄 3발(3/6, 50%)로 시작해, 살아남으면 다음 게임마다 약실이 1칸씩 줄어 확률이 올라감(3/5 → 3/4 → 3/3). 실탄이 발사되면 즉사로 전체 종료. 무승부면 룰렛 없이 다음 게임으로 넘어감.</p>
+
+    <div class="game-card terr" data-game="territory.html" data-name="정복 오목">
+      <div class="gc-emoji">⚔️</div>
+      <div class="gc-title">정복 오목</div>
+      <div class="gc-desc">영토를 넓히고 전투로 빼앗으며 5목을 노리는 4인 배틀로얄.</div>
+      <div class="gc-meta">로컬 4인 · 한 기기에서 번갈아</div>
     </div>
+
+    <div class="hub-foot">게임을 선택하세요</div>
   </div>
 </div>
 
-<!-- 다시하기 확인 모달 -->
-<div class="modal-overlay" id="modal-restart">
-  <div class="modal-box" style="max-width: 360px;">
-    <div class="modal-header">
-      <span class="modal-title">새 게임</span>
-      <button class="modal-close" id="modal-restart-close">×</button>
-    </div>
-    <div class="rules-body">진행 중인 게임을 끝내고 로비로 돌아갈까요? 현재 게임 기록은 사라집니다.</div>
-    <div class="confirm-btns">
-      <button class="btn-secondary" id="modal-restart-cancel">취소</button>
-      <button class="btn-danger" id="modal-restart-confirm" style="width:auto;">새 게임 시작</button>
-    </div>
+<!-- 게임 플레이어 (iframe) -->
+<div id="player">
+  <div class="player-bar">
+    <button class="back-btn" id="back-btn">← 아케이드</button>
+    <span class="player-name" id="player-name"></span>
   </div>
+  <iframe id="game-frame" title="game"></iframe>
 </div>
 
-<!-- 로비 화면 -->
-<div class="screen active" id="screen-lobby">
-  <div style="margin-top: 3rem;">
-    <div class="logo">블라인드 수식전</div>
-    <div class="sub">온라인 2인 대전</div>
-  </div>
-  <div class="card">
-    <h2>내 이름</h2>
-    <input type="text" id="my-name" placeholder="닉네임 입력" maxlength="10">
-  </div>
-  <button class="btn-primary" id="btn-create" style="margin-bottom: 10px;">방 만들기 (선공)</button>
-  <div style="text-align:center; font-size:12px; color:#4a4760; margin-bottom: 10px;">또는</div>
-  <div class="card">
-    <h2>방 코드로 참가</h2>
-    <div class="flex-row">
-      <input type="text" id="join-code" placeholder="6자리 코드" maxlength="6" style="text-transform:uppercase; letter-spacing: 4px; font-size: 18px; font-weight: 700;">
-      <button class="btn-primary flex-1" id="btn-join" style="width:auto; min-width: 70px;">참가</button>
-    </div>
-  </div>
-  <div id="lobby-msg"></div>
+<script>
+const hub = document.getElementById('hub');
+const player = document.getElementById('player');
+const frame = document.getElementById('game-frame');
+const playerName = document.getElementById('player-name');
 
-  <div style="margin-top: 1rem;">
-    <button class="btn-secondary" id="btn-rules-lobby">📖 게임 방법 보기</button>
-  </div>
-
-  <!-- 광고 자리 (로비) -->
-  <div class="ad-slot"><span class="ad-placeholder">ADVERTISEMENT</span></div>
-</div>
-
-<!-- 대기 화면 -->
-<div class="screen" id="screen-waiting">
-  <div style="margin-top: 3rem;">
-    <div class="logo">블라인드 수식전</div>
-  </div>
-  <div class="card" style="text-align:center;">
-    <h2>방 코드</h2>
-    <div class="room-code" id="display-room-code">------</div>
-    <div class="room-hint">이 코드를 친구에게 공유하세요</div>
-    <button class="copy-btn" id="btn-copy-code" style="margin-top:10px; display:block; width:100%;">코드 복사</button>
-  </div>
-  <div class="waiting-anim"><span></span><span></span><span></span></div>
-  <div class="msg info" style="text-align:center;">친구가 참가하길 기다리는 중...</div>
-</div>
-
-<!-- 게임 화면 -->
-<div class="screen" id="screen-game">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
-    <div class="logo" style="font-size:18px; margin-bottom:0;">블라인드 수식전</div>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <span style="font-size:12px; color:#4a4760;">라운드 <span id="g-round">1</span>/4</span>
-      <button class="icon-btn" id="btn-rules-game" title="게임 방법">❓</button>
-      <button class="icon-btn" id="btn-restart-game" title="새 게임">↻</button>
-    </div>
-  </div>
-  <div id="g-roulette-bar" style="font-size:12px; color:#e24b4a; margin-bottom:1rem; text-align:center;"></div>
-
-  <div class="score-row">
-    <div class="score-box p1">
-      <div class="score-name" id="g-p1-name">P1</div>
-      <div class="score-val p1" id="g-p1-total">0</div>
-      <div class="score-detail" id="g-p1-detail">홀 0 / 짝 0</div>
-    </div>
-    <div class="score-box p2">
-      <div class="score-name" id="g-p2-name">P2</div>
-      <div class="score-val p2" id="g-p2-total">0</div>
-      <div class="score-detail" id="g-p2-detail">홀 0 / 짝 0</div>
-    </div>
-  </div>
-
-  <div id="g-msg"></div>
-
-  <div class="formula-board">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <div style="font-size:12px; color:#4a4760;">수식판</div>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <div id="g-timer" style="font-size:13px; font-weight:700; color:#34d399;"></div>
-        <div id="g-turn-badge"></div>
-      </div>
-    </div>
-    <div class="formula-slots" id="g-slots"></div>
-  </div>
-
-  <div class="hand-section" id="g-hand-section">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <div style="font-size:12px; color:#6b6880;">내 손패</div>
-      <div id="g-selected-label" style="font-size:12px; color:#a78bfa;"></div>
-    </div>
-    <div class="hand" id="g-hand"></div>
-  </div>
-
-  <div id="g-history"></div>
-</div>
-
-<!-- 결과 화면 -->
-<div class="screen" id="screen-reveal">
-  <div style="margin-top: 1rem; margin-bottom: 1rem;">
-    <div class="logo" style="font-size:18px;">라운드 <span id="r-round">1</span> 결과</div>
-  </div>
-
-  <div class="card">
-    <div class="formula-board" style="margin-bottom:0;">
-      <div style="font-size:12px; color:#4a4760; margin-bottom: 8px;">내 카드만 공개됩니다 (상대 카드는 비공개)</div>
-      <div class="formula-slots" id="r-slots"></div>
-      <div id="r-score-area"></div>
-    </div>
-  </div>
-
-  <div id="r-history"></div>
-
-  <!-- 광고 자리 (결과 화면) -->
-  <div class="ad-slot"><span class="ad-placeholder">ADVERTISEMENT</span></div>
-
-  <div id="r-action" style="margin-top: auto; padding-top: 1rem;"></div>
-</div>
-
-<!-- 상대 이탈 화면 -->
-<div class="screen" id="screen-left">
-  <div style="margin-top: 3rem;">
-    <div class="logo">블라인드 수식전</div>
-  </div>
-  <div class="card" style="text-align:center; border-color:#fb923c44;">
-    <div style="font-size:40px; margin-bottom:12px;">🚪</div>
-    <h2 style="color:#fb923c;" id="left-title">상대방이 나갔습니다</h2>
-    <div class="rules-body" id="left-msg" style="text-align:center; margin-top:8px;">상대방의 연결이 끊어졌습니다. 게임을 계속 진행할 수 없습니다.</div>
-  </div>
-  <button class="btn-primary" id="btn-left-lobby">로비로 돌아가기</button>
-</div>
-
-<!-- 최종 결과 화면 -->
-<div class="screen" id="screen-end">
-  <div style="margin-top: 1.5rem; margin-bottom: 1rem;">
-    <div class="logo" style="font-size:18px;">최종 결과</div>
-  </div>
-  <div id="end-winner"></div>
-  <div class="final-grid">
-    <div class="final-card">
-      <div class="score-name" id="e-p1-name">P1</div>
-      <div class="score-val p1" id="e-p1-total">0</div>
-      <div class="score-detail" id="e-p1-detail"></div>
-    </div>
-    <div class="final-card">
-      <div class="score-name" id="e-p2-name">P2</div>
-      <div class="score-val p2" id="e-p2-total">0</div>
-      <div class="score-detail" id="e-p2-detail"></div>
-    </div>
-  </div>
-  <div id="e-set-result" class="msg info" style="margin-bottom:1rem;"></div>
-  <div id="e-history"></div>
-
-  <!-- 광고 자리 (최종 결과) -->
-  <div class="ad-slot"><span class="ad-placeholder">ADVERTISEMENT</span></div>
-
-  <div class="gap-lg"></div>
-  <div id="e-action"></div>
-</div>
-
-<!-- 러시안 룰렛 화면 -->
-<div class="screen" id="screen-roulette">
-  <div style="margin-top: 1.5rem; margin-bottom: 0.5rem;">
-    <div class="logo" style="font-size:18px;">🔫 러시안 룰렛</div>
-  </div>
-  <div id="roulette-target" class="msg warn" style="text-align:center; font-size:14px;"></div>
-
-  <div class="revolver-area">
-    <div class="revolver" id="revolver-visual">🔫</div>
-    <div class="chamber-info" id="chamber-info"></div>
-  </div>
-
-  <div id="roulette-result-box"></div>
-  <div id="roulette-action" style="margin-top: 1.5rem;"></div>
-</div>
-
-<!-- 사망/게임오버 화면 -->
-<div class="screen" id="screen-dead">
-  <div style="margin-top: 4rem; text-align:center;">
-    <div style="font-size: 64px; margin-bottom: 1rem;">💀</div>
-    <div id="dead-title" class="logo" style="font-size: 24px; margin-bottom: 8px;"></div>
-    <div id="dead-sub" class="sub" style="margin-bottom: 2rem;"></div>
-    <div id="dead-survivor" class="winner-box" style="margin-bottom: 1.5rem;"></div>
-  </div>
-  <button class="btn-primary" id="btn-dead-restart">새 게임</button>
-</div>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, update, onValue, off, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCZn0R7MwtcBULJRUM6jZbSUcaRv1Q_nZE",
-  databaseURL: "https://blind-formula-battle-default-rtdb.firebaseio.com",
-  projectId: "blind-formula-battle",
-};
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-const CARDS = ['+', '-', '*', '/', -2, -1, -1, 2, 1, 1];
-const NUM_ROUNDS = 4;
-const START_CHAMBERS = 6; // 시작 약실 수
-const BULLETS = 3;        // 실탄 수 (고정)
-
-let myRole = null; // 'p1' or 'p2'
-let myName = '';
-let roomCode = '';
-let roomRef = null;
-let gameListener = null;
-let localSelectedCardIdx = null;
-let localSelectedCard = null;
-
-const TURN_SECONDS = 30;
-let timerInterval = null;
-let timerDeadline = null;
-let timerTurnKey = null; // 같은 턴에 타이머 중복 시작 방지
-let isPlacing = false;   // 카드 배치 처리 중 중복 실행 방지
-
-const OPS = ['+', '-', '*', '/'];
-const EMPTY = '';
-function isEmpty(v) { return v === null || v === undefined || v === EMPTY; }
-function isOp(v) { return OPS.includes(v); }
-function isNum(v) { return !isEmpty(v) && !isOp(v) && !isNaN(Number(v)); }
-function toNum(v) { return Number(v); }
-function slotType(i) { return [0,2,4].includes(i) ? 'num' : 'op'; }
-function cardLabel(c) {
-  if (c === null || c === undefined || c === '') return '';
-  const n = Number(c);
-  if (n === -2) return '−2';
-  if (n === -1) return '−1';
-  return String(c);
-}
-function fmtScore(s) {
-  // 부동소수점 오차 정리 후, 정수면 정수로 소수면 최대 2자리로 표시
-  const rounded = Math.round(s * 10000) / 10000;
-  if (Number.isInteger(rounded)) return String(rounded);
-  return String(parseFloat(rounded.toFixed(2)));
-}
-
-function signedScore(s) {
-  // 양수는 +N, 음수는 −N, 0은 0 (소수 대응)
-  const v = fmtScore(s);
-  const num = parseFloat(v);
-  if (num > 0) return '+' + v;
-  if (num < 0) return '−' + v.replace('-', '');
-  return '0';
-}
-
-function evalFormula(slots) {
-  const [_a, op1, _b, op2, _c] = slots;
-  if (!isNum(_a) || !isOp(op1) || !isNum(_b) || !isOp(op2) || !isNum(_c)) return null;
-  const a = toNum(_a), b = toNum(_b), c = toNum(_c);
-  try {
-    if ((op1 === '*' || op1 === '/') && (op2 !== '*' && op2 !== '/')) {
-      const left = op1 === '*' ? a * b : (b === 0 ? null : a / b);
-      if (left === null) return 0;
-      return op2 === '+' ? left + c : left - c;
-    } else if ((op2 === '*' || op2 === '/') && (op1 !== '*' && op1 !== '/')) {
-      const right = op2 === '*' ? b * c : (c === 0 ? null : b / c);
-      if (right === null) return 0;
-      return op1 === '+' ? a + right : a - right;
-    } else if ((op1 === '*' || op1 === '/') && (op2 === '*' || op2 === '/')) {
-      const mid = op1 === '*' ? a * b : (b === 0 ? null : a / b);
-      if (mid === null) return 0;
-      return op2 === '*' ? mid * c : (c === 0 ? 0 : mid / c);
-    } else {
-      const left = op1 === '+' ? a + b : a - b;
-      return op2 === '+' ? left + c : left - c;
-    }
-  } catch(e) { return 0; }
-}
-
-function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
-}
-
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById('screen-' + id).classList.add('active');
-  // 로비에서만 떠다니는 숫자 배경 표시
-  const bg = document.getElementById('lobby-bg');
-  if (bg) {
-    if (id === 'lobby') { bg.classList.add('show'); startLobbyBg(); }
-    else { bg.classList.remove('show'); stopLobbyBg(); }
-  }
-}
-
-function showLobbyMsg(text, type = 'error') {
-  const el = document.getElementById('lobby-msg');
-  el.innerHTML = `<div class="msg ${type}">${text}</div>`;
-}
-
-function showGameMsg(text, type = 'info') {
-  const el = document.getElementById('g-msg');
-  el.innerHTML = text ? `<div class="msg ${type}">${text}</div>` : '';
-}
-
-// 규칙 펼치기 토글
-// 방 만들기
-document.getElementById('btn-create').addEventListener('click', async () => {
-  myName = document.getElementById('my-name').value.trim();
-  if (!myName) { showLobbyMsg('이름을 입력하세요.'); return; }
-  myRole = 'p1';
-  roomCode = generateCode();
-  roomRef = ref(db, 'rooms/' + roomCode);
-
-  const initialState = {
-    p1Name: myName, p2Name: '',
-    phase: 'waiting',
-    round: 1,
-    matchNum: 1,
-    chambers: START_CHAMBERS,
-    rouletteResult: '',
-    rouletteAck: { p1: false, p2: false },
-    currentTurn: 'p1',
-    roundOwner: 'p1',
-    slots: ['', '', '', '', ''],
-    slotOwner: ['', '', '', '', ''],
-    slotCount: 0,
-    p1Used: [false,false,false,false,false,false,false,false,false,false],
-    p2Used: [false,false,false,false,false,false,false,false,false,false],
-    scores: { p1: [0,0,0,0], p2: [0,0,0,0] },
-    history: [],
-    revealAck: { p1: false, p2: false },
-    presence: { p1: true, p2: false },
-    leftBy: '',
-  };
-  await set(roomRef, initialState);
-  setupPresence();
-
-  document.getElementById('display-room-code').textContent = roomCode;
-  showScreen('waiting');
-  startGameListener();
-});
-
-// 접속 상태 관리: 연결 끊기면 presence를 false로, 명시적 종료는 leftBy 기록
-function setupPresence() {
-  const presRef = ref(db, 'rooms/' + roomCode + '/presence/' + myRole);
-  set(presRef, true);
-  onDisconnect(presRef).set(false);
-}
-
-// 코드 복사
-document.getElementById('btn-copy-code').addEventListener('click', () => {
-  navigator.clipboard.writeText(roomCode).then(() => {
-    document.getElementById('btn-copy-code').textContent = '복사됨!';
-    setTimeout(() => { document.getElementById('btn-copy-code').textContent = '코드 복사'; }, 1500);
+document.querySelectorAll('.game-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const src = card.dataset.game;
+    const name = card.dataset.name;
+    playerName.textContent = name;
+    frame.src = src;            // 게임 로드
+    hub.classList.add('hidden');
+    player.classList.add('active');
+    stopHubBg();
   });
 });
 
-// 방 참가
-document.getElementById('btn-join').addEventListener('click', async () => {
-  myName = document.getElementById('my-name').value.trim();
-  const code = document.getElementById('join-code').value.trim().toUpperCase();
-  if (!myName) { showLobbyMsg('이름을 입력하세요.'); return; }
-  if (code.length !== 6) { showLobbyMsg('6자리 코드를 입력하세요.'); return; }
-
-  const snap = await get(ref(db, 'rooms/' + code));
-  if (!snap.exists()) { showLobbyMsg('방을 찾을 수 없습니다.'); return; }
-  const data = snap.val();
-  if (data.phase !== 'waiting') { showLobbyMsg('이미 시작된 방입니다.'); return; }
-
-  myRole = 'p2';
-  roomCode = code;
-  roomRef = ref(db, 'rooms/' + roomCode);
-  await update(roomRef, { p2Name: myName, phase: 'playing' });
-  setupPresence();
-  showScreen('game');
-  startGameListener();
+document.getElementById('back-btn').addEventListener('click', () => {
+  frame.src = 'about:blank';    // 게임 언로드 (Firebase 연결/타이머 정리)
+  player.classList.remove('active');
+  hub.classList.remove('hidden');
+  startHubBg();
 });
 
-function startGameListener() {
-  if (gameListener && roomRef) off(roomRef, 'value', gameListener);
-  gameListener = onValue(roomRef, (snap) => {
-    if (!snap.exists()) {
-      // 방이 사라짐 = 상대(방장)가 종료. 이미 로비/이탈 화면이면 무시
-      if (myRole && !document.getElementById('screen-left').classList.contains('active')
-          && !document.getElementById('screen-lobby').classList.contains('active')) {
-        stopTimer(); timerTurnKey = null;
-        document.getElementById('left-title').textContent = '게임이 종료되었습니다';
-        document.getElementById('left-msg').textContent = '상대방이 방을 닫았습니다.';
-        showScreen('left');
-      }
-      return;
-    }
-    const data = snap.val();
-    handleGameState(data);
-  });
-}
-
-function normalizeData(data) {
-  // Firebase는 null 포함 배열을 객체로 저장함 — 배열로 복원
-  const toArr = (v, len, def) => {
-    if (!v) return Array(len).fill(def);
-    if (Array.isArray(v)) return v;
-    const arr = Array(len).fill(def);
-    Object.keys(v).forEach(k => { arr[parseInt(k)] = v[k]; });
-    return arr;
-  };
-  data.slots = toArr(data.slots, 5, EMPTY);
-  data.slotOwner = toArr(data.slotOwner, 5, EMPTY);
-  data.p1Used = toArr(data.p1Used, 10, false);
-  data.p2Used = toArr(data.p2Used, 10, false);
-  data.history = data.history ? (Array.isArray(data.history) ? data.history : Object.values(data.history)) : [];
-  if (!data.scores) data.scores = { p1: [0,0,0,0], p2: [0,0,0,0] };
-  data.scores.p1 = toArr(data.scores.p1, 4, 0);
-  data.scores.p2 = toArr(data.scores.p2, 4, 0);
-  // presence: 명시되지 않은 값은 true로 간주(오탐 방지). 명시적 false만 이탈로 처리
-  data.presence = data.presence || {};
-  if (data.presence.p1 === undefined) data.presence.p1 = true;
-  if (data.presence.p2 === undefined) data.presence.p2 = true;
-  data.leftBy = data.leftBy || '';
-  data.chambers = data.chambers || START_CHAMBERS;
-  data.matchNum = data.matchNum || 1;
-  data.rouletteResult = data.rouletteResult || '';
-  data.rouletteAck = data.rouletteAck || { p1: false, p2: false };
-  data.loser = data.loser || '';
-  return data;
-}
-
-function handleGameState(rawData) {
-  if (rawData.phase === 'waiting') {
-    // 대기 중 방장이 상대 참가를 기다림 — 이탈 체크 불필요
-    return;
-  }
-  const data = normalizeData(rawData);
-
-  // 상대 이탈 감지 (게임이 끝나지 않았을 때만)
-  if (data.phase !== 'end' && data.phase !== 'roulette' && data.phase !== 'dead') {
-    const oppRole = myRole === 'p1' ? 'p2' : 'p1';
-    const presence = data.presence || {};
-    const oppPresent = presence[oppRole];
-    const oppName = oppRole === 'p1' ? data.p1Name : data.p2Name;
-
-    if (data.leftBy === oppRole || oppPresent === false) {
-      stopTimer(); timerTurnKey = null;
-      const titleEl = document.getElementById('left-title');
-      const msgEl = document.getElementById('left-msg');
-      if (data.leftBy === oppRole) {
-        titleEl.textContent = `${oppName || '상대방'}이(가) 게임을 종료했습니다`;
-        msgEl.textContent = '상대방이 게임을 나갔습니다. 더 이상 진행할 수 없습니다.';
-      } else {
-        titleEl.textContent = '상대방의 연결이 끊겼습니다';
-        msgEl.textContent = `${oppName || '상대방'}의 접속이 끊어졌습니다. 게임을 계속 진행할 수 없습니다.`;
-      }
-      showScreen('left');
-      return;
-    }
-  }
-
-  if (data.phase === 'playing') {
-    showScreen('game');
-    renderGame(data);
-  } else if (data.phase === 'reveal') {
-    stopTimer(); timerTurnKey = null;
-    showScreen('reveal');
-    renderReveal(data);
-  } else if (data.phase === 'end') {
-    stopTimer(); timerTurnKey = null;
-    showScreen('end');
-    renderEnd(data);
-  } else if (data.phase === 'roulette') {
-    stopTimer(); timerTurnKey = null;
-    showScreen('roulette');
-    renderRoulette(data);
-  } else if (data.phase === 'dead') {
-    stopTimer(); timerTurnKey = null;
-    showScreen('dead');
-    renderDead(data);
-  }
-}
-
-function stopTimer() {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-  timerDeadline = null;
-  const el = document.getElementById('g-timer');
-  if (el) el.textContent = '';
-}
-
-function startTimer(turnKey) {
-  // 같은 턴이면 이미 돌아가는 타이머 유지
-  if (timerTurnKey === turnKey && timerInterval) return;
-  stopTimer();
-  timerTurnKey = turnKey;
-  timerDeadline = Date.now() + TURN_SECONDS * 1000;
-
-  const tick = () => {
-    const el = document.getElementById('g-timer');
-    if (!el) return;
-    const remain = Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000));
-    el.textContent = `⏱️ ${remain}초`;
-    el.style.color = remain <= 5 ? '#f87171' : remain <= 10 ? '#fbbf24' : '#34d399';
-    if (remain <= 0) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-      autoPlaceRandom();
-    }
-  };
-  tick();
-  timerInterval = setInterval(tick, 250);
-}
-
-async function autoPlaceRandom() {
-  if (isPlacing) return; // 수동/자동 배치 중복 방지
-  isPlacing = true; // 비동기 대기 전에 즉시 선점 — 그 사이 수동 클릭 차단
-  try {
-    // 시간 초과: 내 손패에서 빈 칸에 맞는 카드를 무작위로 골라 자동 배치
-    const snap = await get(roomRef);
-    if (!snap.exists()) return;
-    const data = normalizeData(snap.val());
-    if (data.phase !== 'playing' || data.currentTurn !== myRole) return;
-
-    const emptyIdx = [];
-    for (let i = 0; i < 5; i++) if (isEmpty(data.slots[i])) emptyIdx.push(i);
-    if (emptyIdx.length === 0) return;
-
-    const myUsed = myRole === 'p1' ? data.p1Used : data.p2Used;
-
-    // 빈 칸 중 하나를 무작위 선택 → 그 칸 타입에 맞는 안 쓴 카드 무작위 선택
-    for (const slotIdx of emptyIdx.sort(() => Math.random() - 0.5)) {
-      const needNum = slotType(slotIdx) === 'num';
-      const candidates = [];
-      CARDS.forEach((card, idx) => {
-        if (myUsed[idx]) return;
-        if (needNum && isNum(card)) candidates.push(idx);
-        if (!needNum && isOp(card)) candidates.push(idx);
-      });
-      if (candidates.length > 0) {
-        const pick = candidates[Math.floor(Math.random() * candidates.length)];
-        localSelectedCard = CARDS[pick];
-        localSelectedCardIdx = pick;
-        showGameMsg('시간 초과 — 카드가 자동으로 배치됩니다.', 'warn');
-        isPlacing = false; // placeCard가 다시 잡도록 해제
-        await placeCard(slotIdx);
-        return;
-      }
-    }
-  } finally {
-    isPlacing = false;
-  }
-}
-
-function renderGame(data) {
-  document.getElementById('g-round').textContent = data.round;
-
-  // 룰렛 상태 바 (2번째 게임부터 표시)
-  const barEl = document.getElementById('g-roulette-bar');
-  if (barEl) {
-    const ch = data.chambers || START_CHAMBERS;
-    const mn = data.matchNum || 1;
-    const b = Math.min(BULLETS, ch);
-    const pct = Math.round(b / ch * 100);
-    if (mn > 1) {
-      barEl.innerHTML = `🔫 ${mn}번째 대결 · 약실 ${ch}칸 · 실탄 ${b}발 · 발사 확률 ${b}/${ch} (${pct}%)`;
-    } else {
-      barEl.innerHTML = `🔫 패배 시 러시안 룰렛 — 약실 ${ch}칸 중 실탄 ${b}발 (${pct}%)`;
-    }
-  }
-
-  // 점수 — p1은 R1·R3, p2는 R2·R4에서만 득점
-  const p1s = data.scores.p1;
-  const p2s = data.scores.p2;
-  const p1total = (p1s[0] ?? 0) + (p1s[2] ?? 0);
-  const p2total = (p2s[1] ?? 0) + (p2s[3] ?? 0);
-
-  const owner = data.roundOwner;
-
-  document.getElementById('g-p1-name').textContent = data.p1Name + (myRole === 'p1' ? ' (나)' : '');
-  document.getElementById('g-p2-name').textContent = data.p2Name + (myRole === 'p2' ? ' (나)' : '');
-  document.getElementById('g-p1-total').textContent = fmtScore(p1total);
-  document.getElementById('g-p2-total').textContent = fmtScore(p2total);
-  document.getElementById('g-p1-detail').textContent = owner === 'p1' ? '이번 라운드 득점자' : 'R1·R3 담당';
-  document.getElementById('g-p2-detail').textContent = owner === 'p2' ? '이번 라운드 득점자' : 'R2·R4 담당';
-
-  // 현재 라운드 주인 점수판만 강조, 비주인은 흐리게
-  const p1box = document.querySelector('.score-box.p1');
-  const p2box = document.querySelector('.score-box.p2');
-  if (p1box && p2box) {
-    p1box.style.opacity = owner === 'p1' ? '1' : '0.35';
-    p2box.style.opacity = owner === 'p2' ? '1' : '0.35';
-    p1box.style.borderColor = owner === 'p1' ? '#60a5fa' : '#2a2740';
-    p2box.style.borderColor = owner === 'p2' ? '#fb923c' : '#2a2740';
-  }
-
-  // 라운드 주인 안내
-  const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
-  const iAmOwner = owner === myRole;
-
-  // 턴 표시
-  const isMyTurn = data.currentTurn === myRole;
-  const turnName = data.currentTurn === 'p1' ? data.p1Name : data.p2Name;
-  const badge = document.getElementById('g-turn-badge');
-  badge.innerHTML = isMyTurn
-    ? `<span class="tag tag-green">내 차례</span>`
-    : `<span class="tag tag-purple">${turnName} 차례</span>`;
-
-  // 메시지 — 주인 여부에 따라 공격/방어 안내
-  let roleMsg = iAmOwner
-    ? `이번 라운드는 <strong>내 점수 라운드</strong> — 결과값을 최대한 크게!`
-    : `이번 라운드는 <strong>${ownerName}</strong>의 점수 라운드 — 결과값을 막아라!`;
-  if (isMyTurn) {
-    showGameMsg(`${roleMsg}<br>카드를 선택한 후 빈 자리를 클릭하세요.`, iAmOwner ? 'success' : 'warn');
-  } else {
-    showGameMsg(`${roleMsg}<br>${turnName}이(가) 카드를 놓는 중...`, 'info');
-  }
-
-  // 타이머: 내 차례일 때만 작동. 턴 키로 라운드+놓인수+역할 구분
-  if (isMyTurn) {
-    const turnKey = `${data.round}-${data.slotCount}-${myRole}`;
-    startTimer(turnKey);
-  } else {
-    stopTimer();
-    timerTurnKey = null;
-  }
-
-  // 슬롯 렌더
-  const slots = data.slots;
-  const slotOwner = data.slotOwner;
-  const slotsEl = document.getElementById('g-slots');
-  slotsEl.innerHTML = '';
-
-  for (let i = 0; i < 5; i++) {
-    const isNumSlot = slotType(i) === 'num';
-    const filled = !isEmpty(slots[i]);
-    const owner = slotOwner[i];
-    const div = document.createElement('div');
-    div.className = 'slot ' + (isNumSlot ? 'num' : 'op');
-
-    if (filled) {
-      if (owner === myRole) {
-        div.classList.add('filled-mine');
-        div.textContent = cardLabel(slots[i]);
-      } else {
-        div.classList.add('filled-blind');
-        div.textContent = '?';
-      }
-    } else {
-      div.classList.add('empty-hint');
-      div.textContent = isNumSlot ? '#' : '±';
-      if (isMyTurn && localSelectedCard !== null) {
-        const cardIsNum = isNum(localSelectedCard);
-        const cardIsOp = isOp(localSelectedCard);
-        if ((isNumSlot && cardIsNum) || (!isNumSlot && cardIsOp)) {
-          div.classList.add('active-target');
-        }
-      }
-      if (isMyTurn) {
-        div.dataset.slotIdx = i;
-        div.addEventListener('click', () => placeCard(i));
-      }
-    }
-    slotsEl.appendChild(div);
-  }
-
-  // 수식 미리보기
-  const preview = evalFormula(slots);
-  const eq = document.createElement('span'); eq.className = 'eq'; eq.textContent = '=';
-  const res = document.createElement('div'); res.className = 'result-preview';
-  res.textContent = preview !== null ? fmtScore(preview) : '?';
-  slotsEl.appendChild(eq);
-  slotsEl.appendChild(res);
-
-  // 손패
-  const myUsed = myRole === 'p1' ? data.p1Used : data.p2Used;
-  const remaining = myUsed.filter(u => !u).length;
-  const handEl = document.getElementById('g-hand');
-  handEl.innerHTML = '';
-  CARDS.forEach((card, idx) => {
-    const div = document.createElement('div');
-    const typeCls = isOp(card) ? ' op-card' : ' num-card';
-    div.className = 'hcard' + typeCls + (myUsed[idx] ? ' used' : '') + (localSelectedCardIdx === idx ? ' selected' : '');
-    div.textContent = cardLabel(card);
-    if (!myUsed[idx] && isMyTurn) {
-      div.addEventListener('click', () => {
-        if (localSelectedCardIdx === idx) {
-          localSelectedCard = null; localSelectedCardIdx = null;
-        } else {
-          localSelectedCard = card; localSelectedCardIdx = idx;
-        }
-        renderGame(data);
-      });
-    }
-    handEl.appendChild(div);
-  });
-
-  const handLabel = document.querySelector('#g-hand-section > div > div:first-child');
-  if (handLabel) handLabel.textContent = `내 손패 (남은 카드 ${remaining}장)`;
-
-  const selLabel = document.getElementById('g-selected-label');
-  selLabel.textContent = localSelectedCard !== null ? `선택: ${cardLabel(localSelectedCard)}` : '';
-
-  // 히스토리
-  renderHistory('g-history', data.history);
-}
-
-async function placeCard(slotIdx) {
-  if (isPlacing) return; // 이미 처리 중이면 무시
-  if (localSelectedCard === null) { showGameMsg('먼저 카드를 선택하세요.', 'warn'); return; }
-
-  isPlacing = true;
-  try {
-    // Firebase에서 항상 최신 데이터를 읽어옴
-    const snap = await get(roomRef);
-    if (!snap.exists()) return;
-    const data = normalizeData(snap.val());
-
-    if (data.currentTurn !== myRole) { showGameMsg('내 차례가 아닙니다.', 'warn'); return; }
-    if (!isEmpty(data.slots[slotIdx])) { showGameMsg('이미 카드가 있는 자리입니다.', 'warn'); return; }
-
-    const isNumSlot = slotType(slotIdx) === 'num';
-    const cardIsNum = isNum(localSelectedCard);
-    const cardIsOp = isOp(localSelectedCard);
-    if (isNumSlot && !cardIsNum) { showGameMsg('숫자 자리에는 숫자 카드만!', 'error'); return; }
-    if (!isNumSlot && !cardIsOp) { showGameMsg('기호 자리에는 기호 카드만!', 'error'); return; }
-
-    // 빈 값을 모두 빈 문자열로 통일 (Firebase는 undefined/null 거부)
-    const newSlots = data.slots.map(v => isEmpty(v) ? EMPTY : v);
-    const newSlotOwner = data.slotOwner.map(v => isEmpty(v) ? EMPTY : v);
-    newSlots[slotIdx] = localSelectedCard;
-    newSlotOwner[slotIdx] = myRole;
-
-    const usedKey = myRole === 'p1' ? 'p1Used' : 'p2Used';
-    const newUsed = [...(myRole === 'p1' ? data.p1Used : data.p2Used)];
-    newUsed[localSelectedCardIdx] = true;
-
-    const newCount = data.slotCount + 1;
-    const nextTurn = data.currentTurn === 'p1' ? 'p2' : 'p1';
-
-    localSelectedCard = null;
-    localSelectedCardIdx = null;
-    stopTimer(); // 내가 놓았으니 타이머 정지
-
-    const updateData = {
-      slots: newSlots,
-      slotOwner: newSlotOwner,
-      slotCount: newCount,
-      currentTurn: nextTurn,
-      [usedKey]: newUsed,
-    };
-
-    if (newCount === 5) {
-      const result = evalFormula(newSlots);
-      const score = result === null ? 0 : result;
-      const rIdx = data.round - 1;
-      const owner = data.roundOwner;
-      const newScores = JSON.parse(JSON.stringify(data.scores));
-      newScores[owner][rIdx] = score;
-      const formulaStr = `결과값 = ${score}`;
-      const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
-      const newHistory = [...(data.history || []), { round: data.round, formula: formulaStr, score, owner, ownerName }];
-      updateData.scores = newScores;
-      updateData.history = newHistory;
-      updateData.phase = 'reveal';
-      updateData.revealAck = { p1: false, p2: false };
-    }
-
-    await update(roomRef, updateData);
-  } finally {
-    isPlacing = false;
-  }
-}
-
-function renderReveal(data) {
-  data = normalizeData(data);
-  document.getElementById('r-round').textContent = data.round;
-  const slots = data.slots;
-  const slotOwner = data.slotOwner;
-  const result = evalFormula(slots);
-  const score = result === null ? 0 : result;
-
-  // 수식판: 내 카드만 공개, 상대 카드는 ? 유지
-  const slotsEl = document.getElementById('r-slots');
-  slotsEl.innerHTML = '';
-  for (let i = 0; i < 5; i++) {
-    const isNumSlot = slotType(i) === 'num';
-    const div = document.createElement('div');
-    div.className = 'slot ' + (isNumSlot ? 'num' : 'op');
-    if (slotOwner[i] === myRole) {
-      div.classList.add('filled-mine');
-      div.textContent = cardLabel(slots[i]);
-    } else {
-      div.classList.add('filled-blind');
-      div.textContent = '?';
-    }
-    slotsEl.appendChild(div);
-  }
-  const eq = document.createElement('span'); eq.className = 'eq'; eq.textContent = '=';
-  const res = document.createElement('div'); res.className = 'result-preview';
-  res.style.fontSize = '24px';
-  res.textContent = fmtScore(score);
-  slotsEl.appendChild(eq);
-  slotsEl.appendChild(res);
-
-  const owner = data.roundOwner;
-  const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
-  const boxClass = owner === 'p1' ? 'p1' : 'p2';
-  document.getElementById('r-score-area').innerHTML =
-    `<div class="reveal-score-box ${boxClass}" style="margin-top: 12px; padding: 14px; font-size: 15px;">${ownerName} ${signedScore(score)}점</div>`;
-
-  renderHistory('r-history', data.history);
-
-  const ackEl = document.getElementById('r-action');
-  const myAck = data.revealAck[myRole];
-
-  if (myAck) {
-    ackEl.innerHTML = `<div class="msg info">상대방 확인 대기 중...</div><div class="waiting-anim"><span></span><span></span><span></span></div>`;
-  } else {
-    const btnLabel = data.round < NUM_ROUNDS ? '다음 라운드' : '최종 결과';
-    ackEl.innerHTML = `<button class="btn-primary" id="btn-ack">${btnLabel} →</button>`;
-    document.getElementById('btn-ack').addEventListener('click', async () => {
-      // 최신 데이터로 ack 병합 (stale 덮어쓰기/이중 전환 방지)
-      const snap = await get(roomRef);
-      if (!snap.exists()) return;
-      const cur = normalizeData(snap.val());
-      if (cur.phase !== 'reveal') return; // 이미 누군가 진행시킴
-      const newAck = { ...(cur.revealAck || {}), [myRole]: true };
-      const bothAck = newAck.p1 && newAck.p2;
-
-      if (bothAck) {
-        if (cur.round < NUM_ROUNDS) {
-          // 다음 라운드: 주인 교체 (R1·R3=p1, R2·R4=p2). 사용한 카드는 폐기되어 누적 유지됨
-          const nextRound = cur.round + 1;
-          const nextOwner = nextRound % 2 === 1 ? 'p1' : 'p2';
-          await update(roomRef, {
-            phase: 'playing',
-            round: nextRound,
-            slots: ['','','','',''],
-            slotOwner: ['','','','',''],
-            slotCount: 0,
-            roundOwner: nextOwner,
-            currentTurn: nextOwner,
-            revealAck: { p1: false, p2: false },
-          });
-        } else {
-          await update(roomRef, { phase: 'end', revealAck: { p1: false, p2: false } });
-        }
-      } else {
-        await update(roomRef, { revealAck: newAck });
-      }
-    });
-  }
-}
-
-async function startNextMatch(data, survived) {
-  // survived=true면 약실 1칸 감소, 무승부 스킵이면 약실 유지
-  const nextMatch = (data.matchNum || 1) + 1;
-  const nextChambers = survived ? Math.max(BULLETS, (data.chambers || START_CHAMBERS) - 1) : (data.chambers || START_CHAMBERS);
-  await update(roomRef, {
-    phase: 'playing',
-    matchNum: nextMatch,
-    chambers: nextChambers,
-    round: 1,
-    roundOwner: 'p1',
-    currentTurn: 'p1',
-    slots: ['','','','',''],
-    slotOwner: ['','','','',''],
-    slotCount: 0,
-    p1Used: [false,false,false,false,false,false,false,false,false,false],
-    p2Used: [false,false,false,false,false,false,false,false,false,false],
-    scores: { p1: [0,0,0,0], p2: [0,0,0,0] },
-    history: [],
-    revealAck: { p1: false, p2: false },
-    rouletteResult: '',
-    rouletteAck: { p1: false, p2: false },
-    loser: '',
-  });
-}
-
-function renderEnd(data) {
-  data = normalizeData(data);
-  // 주인에게만 점수가 들어가므로: p1은 R1+R3, p2는 R2+R4에서만 득점
-  const p1total = Math.round(((data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0)) * 10000) / 10000;
-  const p2total = Math.round(((data.scores.p2[1] ?? 0) + (data.scores.p2[3] ?? 0)) * 10000) / 10000;
-
-  const winnerEl = document.getElementById('end-winner');
-  if (p1total > p2total) {
-    winnerEl.innerHTML = `<div class="winner-box"><div class="winner-title">🏆 ${data.p1Name} 승리!</div><div class="winner-sub">${fmtScore(p1total)}점 vs ${fmtScore(p2total)}점</div></div>`;
-  } else if (p2total > p1total) {
-    winnerEl.innerHTML = `<div class="winner-box" style="background:#2e1a1a; border-color: #fb923c44;"><div class="winner-title" style="color:#fb923c;">🏆 ${data.p2Name} 승리!</div><div class="winner-sub" style="color:#d97706;">${fmtScore(p2total)}점 vs ${fmtScore(p1total)}점</div></div>`;
-  } else {
-    winnerEl.innerHTML = `<div class="tie-box"><div class="tie-title">무승부!</div><div class="winner-sub" style="color:#a87a10;">${fmtScore(p1total)}점 vs ${fmtScore(p2total)}점</div></div>`;
-  }
-
-  const r1 = data.scores.p1[0] ?? 0;
-  const r3 = data.scores.p1[2] ?? 0;
-  const r2 = data.scores.p2[1] ?? 0;
-  const r4 = data.scores.p2[3] ?? 0;
-
-  document.getElementById('e-p1-name').textContent = data.p1Name;
-  document.getElementById('e-p2-name').textContent = data.p2Name;
-  document.getElementById('e-p1-total').textContent = fmtScore(p1total);
-  document.getElementById('e-p2-total').textContent = fmtScore(p2total);
-  document.getElementById('e-p1-detail').textContent = `R1 ${fmtScore(r1)} + R3 ${fmtScore(r3)}`;
-  document.getElementById('e-p2-detail').textContent = `R2 ${fmtScore(r2)} + R4 ${fmtScore(r4)}`;
-
-  document.getElementById('e-set-result').innerHTML =
-    `<strong>${data.p1Name}</strong>는 R1·R3에서 득점, <strong>${data.p2Name}</strong>는 R2·R4에서 득점. 각자 자기 라운드 점수 합으로 승부합니다.`;
-
-  renderHistory('e-history', data.history);
-
-  // 패자 결정 후 룰렛으로 진행
-  let loser; // 'p1' | 'p2' | 'both'(무승부)
-  if (p1total > p2total) loser = 'p2';
-  else if (p2total > p1total) loser = 'p1';
-  else loser = 'both';
-
-  const actionEl = document.getElementById('e-action');
-  const myAck = (data.revealAck && data.revealAck[myRole]);
-  if (myAck) {
-    actionEl.innerHTML = `<div class="msg info">상대방 확인 대기 중...</div><div class="waiting-anim"><span></span><span></span><span></span></div>`;
-  } else {
-    const btnLabel = loser === 'both' ? '다음 게임으로 → (무승부, 룰렛 없음)' : '🔫 러시안 룰렛으로 →';
-    const btnClass = loser === 'both' ? 'btn-primary' : 'btn-danger';
-    actionEl.innerHTML = `<button class="${btnClass}" id="btn-to-roulette" style="width:100%;">${btnLabel}</button>`;
-    document.getElementById('btn-to-roulette').addEventListener('click', async () => {
-      // 최신 데이터로 ack 병합 (동시 클릭 시 덮어쓰기 방지)
-      const snap = await get(roomRef);
-      if (!snap.exists()) return;
-      const cur = normalizeData(snap.val());
-      if (cur.phase !== 'end') return; // 이미 누군가 진행시킴
-      const newAck = { ...(cur.revealAck || {}), [myRole]: true };
-      const bothAck = newAck.p1 && newAck.p2;
-      if (bothAck) {
-        if (loser === 'both') {
-          await startNextMatch(cur, false); // 무승부 → 룰렛 스킵, 약실 유지
-        } else {
-          await update(roomRef, { phase: 'roulette', loser, rouletteResult: '', rouletteAck: { p1: false, p2: false } });
-        }
-      } else {
-        await update(roomRef, { revealAck: newAck });
-      }
-    });
-  }
-}
-
-function renderHistory(elId, history) {
-  if (!history || history.length === 0) { document.getElementById(elId).innerHTML = ''; return; }
-  let html = '<div class="history"><div class="history-title">라운드 기록</div>';
-  history.forEach(h => {
-    const who = h.ownerName ? `<span style="color:#a78bfa;">${h.ownerName}</span>` : '';
-    html += `<div class="history-row"><span>R${h.round}</span><span>${who} 득점</span><span style="font-weight:700;">${signedScore(h.score)}</span></div>`;
-  });
-  html += '</div>';
-  document.getElementById(elId).innerHTML = html;
-}
-
-function renderRoulette(data) {
-  const loser = data.loser; // 'p1' | 'p2' | 'both'
-  const chambers = data.chambers || START_CHAMBERS;
-  const p1Name = data.p1Name, p2Name = data.p2Name;
-
-  // 누가 쏘는지 안내 (무승부는 룰렛에 오지 않음 — 패자 단독)
-  const targetEl = document.getElementById('roulette-target');
-  const loserName = loser === 'p1' ? p1Name : p2Name;
-  const iAmLoser = loser === myRole;
-  targetEl.innerHTML = iAmLoser
-    ? `당신이 패배했습니다 — <strong>방아쇠를 당기세요</strong>`
-    : `<strong>${loserName}</strong>이(가) 방아쇠를 당깁니다`;
-
-  // 약실 시각화
-  const bullets = Math.min(BULLETS, chambers);
-  const pct = Math.round(bullets / chambers * 100);
-  document.getElementById('chamber-info').innerHTML =
-    `약실 <strong style="color:#e24b4a;">${chambers}</strong>칸 중 실탄 <strong style="color:#e24b4a;">${bullets}</strong>발<br><span style="font-size:12px;color:#6b6880;">발사 확률 ${bullets}/${chambers} (${pct}%)</span>`;
-
-  const resultBox = document.getElementById('roulette-result-box');
-  const actionEl = document.getElementById('roulette-action');
-  const revolver = document.getElementById('revolver-visual');
-
-  // 결과가 이미 나왔으면 표시
-  if (data.rouletteResult) {
-    revolver.classList.remove('spinning');
-    const fired = data.rouletteResult === 'fired';
-    if (fired) {
-      resultBox.innerHTML = `<div class="roulette-fire">💥 BANG! 실탄이 발사되었습니다</div>`;
-    } else {
-      resultBox.innerHTML = `<div class="roulette-safe">⚊ 찰칵 — 빈 약실. 생존!</div>`;
-    }
-    // 양쪽 확인 후 다음 단계
-    const myAck = data.rouletteAck && data.rouletteAck[myRole];
-    if (myAck) {
-      actionEl.innerHTML = `<div class="msg info">상대방 확인 대기 중...</div><div class="waiting-anim"><span></span><span></span><span></span></div>`;
-    } else {
-      const label = fired ? '결과 보기 →' : '다음 게임으로 →';
-      actionEl.innerHTML = `<button class="btn-primary" id="btn-roulette-ack" style="width:100%;">${label}</button>`;
-      document.getElementById('btn-roulette-ack').addEventListener('click', () => advanceAfterRoulette(data, fired));
-    }
-    return;
-  }
-
-  // 결과 전 — 패자만 방아쇠 (무승부는 룰렛에 오지 않음)
-  resultBox.innerHTML = '';
-  const iMustShoot = loser === myRole;
-  if (iMustShoot) {
-    actionEl.innerHTML = `<button class="btn-danger" id="btn-pull-trigger" style="width:100%; padding:16px;">방아쇠를 당긴다</button>`;
-    document.getElementById('btn-pull-trigger').addEventListener('click', () => pullTrigger());
-  } else {
-    actionEl.innerHTML = `<div class="msg warn">상대가 방아쇠를 당기길 기다리는 중...</div><div class="waiting-anim"><span></span><span></span><span></span></div>`;
-  }
-}
-
-async function pullTrigger() {
-  // 패자 한 명만 판정하므로 충돌 없음
-  const revolver = document.getElementById('revolver-visual');
-  revolver.classList.add('spinning');
-  document.getElementById('roulette-action').innerHTML = `<div class="msg warn" style="text-align:center;">🔫 ...</div>`;
-
-  // 최신 데이터 재확인 — 이미 결과 나왔으면 중단
-  const snap = await get(roomRef);
-  if (!snap.exists()) return;
-  const cur = normalizeData(snap.val());
-  if (cur.rouletteResult) return; // 이미 판정됨
-  if (cur.loser !== myRole) return; // 패자만 판정
-
-  // 약실 chambers칸 중 BULLETS발이 실탄 → 발사 확률 BULLETS/chambers
-  const chambers = cur.chambers || START_CHAMBERS;
-  const bullets = Math.min(BULLETS, chambers);
-  const fired = Math.floor(Math.random() * chambers) < bullets;
-
-  // 살짝 연출 지연 후 결과 기록
-  setTimeout(async () => {
-    await update(roomRef, { rouletteResult: fired ? 'fired' : 'safe' });
-  }, 1200);
-}
-
-async function advanceAfterRoulette(data, fired) {
-  // 최신 데이터로 ack 병합 (동시 클릭 시 덮어쓰기 방지)
-  const snap = await get(roomRef);
-  if (!snap.exists()) return;
-  const cur = normalizeData(snap.val());
-  if (cur.phase !== 'roulette') return; // 이미 진행됨
-  const newAck = { ...(cur.rouletteAck || {}), [myRole]: true };
-  const bothAck = newAck.p1 && newAck.p2;
-  if (!bothAck) {
-    await update(roomRef, { rouletteAck: newAck });
-    return;
-  }
-
-  if (fired) {
-    await update(roomRef, { phase: 'dead' }); // 사망 → 종료
-  } else {
-    await startNextMatch(cur, true); // 생존 → 약실 1칸 감소하고 새 게임
-  }
-}
-
-function renderDead(data) {
-  const loser = data.loser;
-  const p1Name = data.p1Name, p2Name = data.p2Name;
-  // 무승부는 룰렛/사망에 오지 않음 — 패자 단독
-  const loserName = loser === 'p1' ? p1Name : p2Name;
-  const winnerName = loser === 'p1' ? p2Name : p1Name;
-  document.getElementById('dead-title').textContent = `${loserName} 사망`;
-  document.getElementById('dead-sub').textContent = `${data.matchNum}번째 게임에서 운명이 갈렸습니다.`;
-  document.getElementById('dead-survivor').innerHTML = `<div class="winner-title">🏆 최후의 생존자</div><div class="winner-sub">${winnerName}</div>`;
-}
-
-async function resetToLobby(notifyLeave = false) {
-  const leavingRole = myRole;
-  const leavingRef = roomRef;
-  // 게임 중 명시적으로 나가는 경우 상대에게 알림
-  if (notifyLeave && leavingRef && leavingRole) {
-    try { await update(leavingRef, { leftBy: leavingRole }); } catch(e) {}
-  }
-  stopTimer(); timerTurnKey = null;
-  if (gameListener && roomRef) off(roomRef, 'value', gameListener);
-
-  // 방장(p1)이 나가면 일정 시간 후 방 정리 (상대가 알림을 받을 시간 확보)
-  if (leavingRole === 'p1' && leavingRef) {
-    setTimeout(() => { try { remove(leavingRef); } catch(e) {} }, 5000);
-  }
-
-  myRole = null; myName = ''; roomCode = ''; roomRef = null; gameListener = null;
-  localSelectedCard = null; localSelectedCardIdx = null;
-  isPlacing = false;
-  document.getElementById('my-name').value = '';
-  document.getElementById('join-code').value = '';
-  showScreen('lobby');
-}
-
-// 사망 화면에서 새 게임 (로비로)
-document.getElementById('btn-dead-restart').addEventListener('click', () => resetToLobby(false));
-// 이탈 화면에서 로비로
-document.getElementById('btn-left-lobby').addEventListener('click', () => resetToLobby(false));
-
-// 규칙 모달
-function openRules() { document.getElementById('modal-rules').classList.add('show'); }
-function closeRules() { document.getElementById('modal-rules').classList.remove('show'); }
-document.getElementById('btn-rules-game').addEventListener('click', openRules);
-document.getElementById('btn-rules-lobby').addEventListener('click', openRules);
-document.getElementById('modal-rules-close').addEventListener('click', closeRules);
-document.getElementById('modal-rules').addEventListener('click', (e) => {
-  if (e.target.id === 'modal-rules') closeRules();
-});
-
-// 다시하기 확인 모달
-function openRestart() { document.getElementById('modal-restart').classList.add('show'); }
-function closeRestart() { document.getElementById('modal-restart').classList.remove('show'); }
-document.getElementById('btn-restart-game').addEventListener('click', openRestart);
-document.getElementById('modal-restart-close').addEventListener('click', closeRestart);
-document.getElementById('modal-restart-cancel').addEventListener('click', closeRestart);
-document.getElementById('modal-restart').addEventListener('click', (e) => {
-  if (e.target.id === 'modal-restart') closeRestart();
-});
-document.getElementById('modal-restart-confirm').addEventListener('click', () => {
-  closeRestart();
-  resetToLobby(true); // 게임 중 나감 → 상대에게 알림
-});
-
-// ===== 로비 배경: 떠다니는 숫자/기호 =====
-let lobbyBgRAF = null;
-let lobbyBgParticles = [];
-const LOBBY_SYMBOLS = ['+', '−', '×', '÷', '2', '1', '−2', '−1', '=', '?'];
-
-function initLobbyParticles(w, h) {
-  const count = Math.min(40, Math.floor(w * h / 22000));
-  lobbyBgParticles = [];
+// ===== 허브 배경: 떠다니는 게임 기호 =====
+let bgRAF = null, particles = [];
+const SYMBOLS = ['+','−','×','÷','♟','⚔','5','?','=','2','1'];
+
+function initParticles(w, h) {
+  const count = Math.min(38, Math.floor(w * h / 24000));
+  particles = [];
   for (let i = 0; i < count; i++) {
-    lobbyBgParticles.push({
-      x: Math.random() * w,
-      y: Math.random() * h,
-      sym: LOBBY_SYMBOLS[Math.floor(Math.random() * LOBBY_SYMBOLS.length)],
-      size: 14 + Math.random() * 34,
-      speed: 0.15 + Math.random() * 0.5,
-      drift: (Math.random() - 0.5) * 0.3,
-      alpha: 0.04 + Math.random() * 0.12,
-      rot: (Math.random() - 0.5) * 0.4,
+    particles.push({
+      x: Math.random()*w, y: Math.random()*h,
+      sym: SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)],
+      size: 14 + Math.random()*32, speed: 0.12 + Math.random()*0.45,
+      drift: (Math.random()-0.5)*0.3, alpha: 0.04 + Math.random()*0.11,
+      rot: (Math.random()-0.5)*0.4,
     });
   }
 }
 
-function startLobbyBg() {
-  const canvas = document.getElementById('lobby-bg');
-  if (!canvas) return;
+function startHubBg() {
+  const canvas = document.getElementById('hub-bg');
   const ctx = canvas.getContext('2d');
-
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    initLobbyParticles(canvas.width, canvas.height);
-  }
-  if (!lobbyBgRAF) {
-    resize();
-    canvas._resizeHandler = resize;
-    window.addEventListener('resize', resize);
-  }
-
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; initParticles(canvas.width, canvas.height); }
+  if (!bgRAF) { resize(); canvas._rh = resize; window.addEventListener('resize', resize); }
   function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const p of lobbyBgParticles) {
-      p.y -= p.speed;
-      p.x += p.drift;
-      if (p.y < -50) { p.y = canvas.height + 40; p.x = Math.random() * canvas.width; }
-      if (p.x < -50) p.x = canvas.width + 40;
-      if (p.x > canvas.width + 50) p.x = -40;
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rot);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (const p of particles) {
+      p.y -= p.speed; p.x += p.drift;
+      if (p.y < -50) { p.y = canvas.height+40; p.x = Math.random()*canvas.width; }
+      if (p.x < -50) p.x = canvas.width+40; if (p.x > canvas.width+50) p.x = -40;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
       ctx.font = `700 ${p.size}px 'Pretendard', sans-serif`;
-      ctx.fillStyle = `rgba(167, 139, 250, ${p.alpha})`;
-      ctx.textAlign = 'center';
-      ctx.fillText(p.sym, 0, 0);
-      ctx.restore();
+      ctx.fillStyle = `rgba(140, 150, 230, ${p.alpha})`;
+      ctx.textAlign = 'center'; ctx.fillText(p.sym, 0, 0); ctx.restore();
     }
-    lobbyBgRAF = requestAnimationFrame(draw);
+    bgRAF = requestAnimationFrame(draw);
   }
-  if (!lobbyBgRAF) draw();
+  if (!bgRAF) draw();
 }
 
-function stopLobbyBg() {
-  if (lobbyBgRAF) { cancelAnimationFrame(lobbyBgRAF); lobbyBgRAF = null; }
-  const canvas = document.getElementById('lobby-bg');
-  if (canvas && canvas._resizeHandler) {
-    window.removeEventListener('resize', canvas._resizeHandler);
-    canvas._resizeHandler = null;
-  }
+function stopHubBg() {
+  if (bgRAF) { cancelAnimationFrame(bgRAF); bgRAF = null; }
+  const canvas = document.getElementById('hub-bg');
+  if (canvas && canvas._rh) { window.removeEventListener('resize', canvas._rh); canvas._rh = null; }
 }
 
-// 초기 로딩 시 로비가 활성 상태이므로 배경 시작
-document.getElementById('lobby-bg').classList.add('show');
-startLobbyBg();
+startHubBg();
 </script>
 </body>
 </html>
