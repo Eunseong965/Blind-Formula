@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>게임 아케이드</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0c0d12; color: #e8e6f0; overflow: hidden; }
+
+  /* 허브 화면 */
+  #hub {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 1.5rem;
+    z-index: 1; transition: opacity 0.25s;
+  }
+  #hub.hidden { opacity: 0; pointer-events: none; }
+
+  .hub-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+
+  .hub-inner { position: relative; z-index: 2; width: 100%; max-width: 440px; text-align: center; }
+  .arcade-logo { font-size: 13px; letter-spacing: 5px; color: #6b6880; margin-bottom: 6px; text-transform: uppercase; }
+  .arcade-title { font-size: 32px; font-weight: 800; letter-spacing: -1px; margin-bottom: 2.5rem;
+    background: linear-gradient(120deg, #a78bfa, #4f8cff, #34d399); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  .game-card {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: #15161f; border: 1px solid #23252f; border-radius: 16px;
+    padding: 1.4rem 1.5rem; margin-bottom: 1rem; transition: all 0.15s; position: relative; overflow: hidden;
+  }
+  .game-card:hover { transform: translateY(-3px); border-color: #4f8cff; box-shadow: 0 8px 24px #0006; }
+  .game-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+  .game-card.blind::before { background: #a78bfa; }
+  .game-card.terr::before { background: #34d399; }
+  .gc-emoji { font-size: 26px; margin-bottom: 8px; }
+  .gc-title { font-size: 19px; font-weight: 800; margin-bottom: 4px; }
+  .gc-desc { font-size: 12.5px; color: #8b88a0; line-height: 1.5; }
+  .gc-meta { font-size: 11px; color: #5a5870; margin-top: 8px; }
+
+  .hub-foot { font-size: 11px; color: #44425a; margin-top: 1.5rem; }
+
+  /* 게임 화면 (iframe 컨테이너) */
+  #player {
+    position: absolute; inset: 0; z-index: 5; display: none; flex-direction: column;
+    background: #0c0d12;
+  }
+  #player.active { display: flex; }
+  .player-bar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: #15161f; border-bottom: 1px solid #23252f; flex-shrink: 0;
+  }
+  .back-btn {
+    background: #23252f; border: none; color: #e8e6f0; border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .back-btn:hover { background: #2f3242; }
+  .player-name { font-size: 13px; color: #8b88a0; font-weight: 600; }
+  #game-frame { flex: 1; width: 100%; border: none; background: #0c0d12; }
+</style>
+</head>
+<body>
+
+<!-- 허브 (선택 화면) -->
+<div id="hub">
+  <canvas class="hub-bg" id="hub-bg"></canvas>
+  <div class="hub-inner">
+    <div class="arcade-logo">은성 아케이드</div>
+    <div class="arcade-title">게임 아케이드</div>
+
+    <div class="game-card blind" data-game="blind.html" data-name="블라인드 수식전">
+      <div class="gc-emoji">🃏</div>
+      <div class="gc-title">블라인드 수식전</div>
+      <div class="gc-desc">상대 카드를 모른 채 수식을 채워 점수를 겨루는 온라인 2인 두뇌 대전.</div>
+      <div class="gc-meta">온라인 2인 · 방 코드로 매칭</div>
+    </div>
+
+    <div class="game-card terr" data-game="territory-online.html" data-name="정복 오목">
+      <div class="gc-emoji">⚔️</div>
+      <div class="gc-title">정복 오목</div>
+      <div class="gc-desc">영토를 넓히고 전투로 빼앗으며 5목을 노리는 4인 배틀로얄.</div>
+      <div class="gc-meta">온라인 4인 · 방 코드로 매칭</div>
+    </div>
+
+    <div class="hub-foot">게임을 선택하세요</div>
+  </div>
+</div>
+
+<!-- 게임 플레이어 (iframe) -->
+<div id="player">
+  <div class="player-bar">
+    <button class="back-btn" id="back-btn">← 아케이드</button>
+    <span class="player-name" id="player-name"></span>
+  </div>
+  <iframe id="game-frame" title="game"></iframe>
+</div>
+
+<script>
+const hub = document.getElementById('hub');
+const player = document.getElementById('player');
+const frame = document.getElementById('game-frame');
+const playerName = document.getElementById('player-name');
+
+document.querySelectorAll('.game-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const src = card.dataset.game;
+    const name = card.dataset.name;
+    playerName.textContent = name;
+    frame.src = src;            // 게임 로드
+    hub.classList.add('hidden');
+    player.classList.add('active');
+    stopHubBg();
+  });
+});
+
+document.getElementById('back-btn').addEventListener('click', () => {
+  frame.src = 'about:blank';    // 게임 언로드 (Firebase 연결/타이머 정리)
+  player.classList.remove('active');
+  hub.classList.remove('hidden');
+  startHubBg();
+});
+
+// ===== 허브 배경: 떠다니는 게임 기호 =====
+let bgRAF = null, particles = [];
+const SYMBOLS = ['+','−','×','÷','♟','⚔','5','?','=','2','1'];
+
+function initParticles(w, h) {
+  const count = Math.min(38, Math.floor(w * h / 24000));
+  particles = [];
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: Math.random()*w, y: Math.random()*h,
+      sym: SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)],
+      size: 14 + Math.random()*32, speed: 0.12 + Math.random()*0.45,
+      drift: (Math.random()-0.5)*0.3, alpha: 0.04 + Math.random()*0.11,
+      rot: (Math.random()-0.5)*0.4,
+    });
+  }
+}
+
+function startHubBg() {
+  const canvas = document.getElementById('hub-bg');
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; initParticles(canvas.width, canvas.height); }
+  if (!bgRAF) { resize(); canvas._rh = resize; window.addEventListener('resize', resize); }
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (const p of particles) {
+      p.y -= p.speed; p.x += p.drift;
+      if (p.y < -50) { p.y = canvas.height+40; p.x = Math.random()*canvas.width; }
+      if (p.x < -50) p.x = canvas.width+40; if (p.x > canvas.width+50) p.x = -40;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.font = `700 ${p.size}px 'Pretendard', sans-serif`;
+      ctx.fillStyle = `rgba(140, 150, 230, ${p.alpha})`;
+      ctx.textAlign = 'center'; ctx.fillText(p.sym, 0, 0); ctx.restore();
+    }
+    bgRAF = requestAnimationFrame(draw);
+  }
+  if (!bgRAF) draw();
+}
+
+function stopHubBg() {
+  if (bgRAF) { cancelAnimationFrame(bgRAF); bgRAF = null; }
+  const canvas = document.getElementById('hub-bg');
+  if (canvas && canvas._rh) { window.removeEventListener('resize', canvas._rh); canvas._rh = null; }
+}
+
+startHubBg();
+</script>
+</body>
+</html>
