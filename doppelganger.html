@@ -383,8 +383,12 @@ function buildGame(seats) {
   });
 
   // 도플갱어 가짜 프로필: 각 항목을 랜덤 학생에게서 복사 (출처 기록)
+  // 단, 4항목 출처가 전부 같은 학생이면 완전 복제가 되므로 최소 2명 이상 섞이게 보장
   const pick = () => Math.floor(Math.random()*4);
-  const gSrc = pick(), aSrc = pick(), jSrc = pick(), sSrc = pick();
+  let gSrc, aSrc, jSrc, sSrc;
+  do {
+    gSrc = pick(); aSrc = pick(); jSrc = pick(); sSrc = pick();
+  } while (new Set([gSrc, aSrc, jSrc, sSrc]).size < 2);
   const doppelProfile = {
     gender: students[gSrc].gender, genderSrc: gSrc,
     age: students[aSrc].age, ageSrc: aSrc,
