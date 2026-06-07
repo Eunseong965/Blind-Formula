@@ -475,8 +475,13 @@ function serializeState(g) {
     retreatMode: g.retreatMode ? {
       loser: g.retreatMode.loser, lands: g.retreatMode.lands,
     } : null,
-    // 진행 중인 전투 (카드 뽑기 동기화용) — 3단계에서 채움
-    battle: g.battle || null,
+    // 진행 중인 전투 (카드 뽑기 동기화). 0=미선택 (null은 Firebase가 삭제하므로 금지)
+    battle: g.battle ? {
+      attacker: g.battle.attacker, defender: g.battle.defender,
+      target: g.battle.target, attackerFrom: g.battle.attackerFrom,
+      chain: g.battle.chain || false,
+      atkCard: g.battle.atkCard || 0, defCard: g.battle.defCard || 0,
+    } : null,
   };
 }
 
@@ -498,7 +503,13 @@ function deserializeState(d) {
     retreatMode: d.retreatMode || null,
     winner: (d.winner === undefined ? null : d.winner),
     winReason: d.winReason || '',
-    battle: d.battle || null,
+    battle: d.battle ? {
+      attacker: d.battle.attacker, defender: d.battle.defender,
+      target: d.battle.target, attackerFrom: d.battle.attackerFrom,
+      chain: d.battle.chain || false,
+      atkCard: d.battle.atkCard || 0,  // Firebase가 0/null 삭제해도 0으로 복원
+      defCard: d.battle.defCard || 0,
+    } : null,
   };
 }
 
@@ -777,7 +788,7 @@ function moveePawnTo(p, target) {
 function startBattle(attacker, defender, target, attackerFrom) {
   state.battle = {
     attacker, defender, target, attackerFrom,
-    chain: false, atkCard: null, defCard: null,
+    chain: false, atkCard: 0, defCard: 0,  // 0 = 미선택 (Firebase가 null을 삭제하므로)
   };
   render();
   pushState();
@@ -786,7 +797,7 @@ function startBattle(attacker, defender, target, attackerFrom) {
 function startChainBattle(loser, enemy, dest) {
   state.battle = {
     attacker: loser, defender: enemy, target: dest, attackerFrom: -1,
-    chain: true, atkCard: null, defCard: null,
+    chain: true, atkCard: 0, defCard: 0,
   };
   render();
   pushState();
@@ -812,13 +823,13 @@ function renderBattle() {
   contBtn.style.display = 'none';
   resultEl.textContent = '';
 
-  const bothDone = b.atkCard !== null && b.defCard !== null;
+  const bothDone = b.atkCard > 0 && b.defCard > 0;
 
   if (!bothDone) {
     // 카드 뽑기 단계
     const myRole = (mySeat === b.attacker) ? 'atk' : (mySeat === b.defender) ? 'def' : null;
-    const iNeedToPick = (myRole === 'atk' && b.atkCard === null) || (myRole === 'def' && b.defCard === null);
-    const waitingFor = b.atkCard === null ? b.attacker : b.defender;
+    const iNeedToPick = (myRole === 'atk' && !(b.atkCard > 0)) || (myRole === 'def' && !(b.defCard > 0));
+    const waitingFor = !(b.atkCard > 0) ? b.attacker : b.defender;
 
     if (iNeedToPick) {
       area.innerHTML = `<div style="font-size:12px;margin-bottom:6px;font-weight:700;color:${COLORS[mySeat]}">카드를 고르세요</div>`;
@@ -834,9 +845,9 @@ function renderBattle() {
     } else {
       // 내 차례 아님 — 누구 뽑는 중인지 표시
       area.innerHTML = `<div class="card-pick" style="opacity:0.5;">
-        <div class="pcard">${b.atkCard !== null ? '✓' : '?'}</div>
+        <div class="pcard">${b.atkCard > 0 ? '✓' : '?'}</div>
         <div style="display:flex;align-items:center;font-weight:800;color:#6b6880;">vs</div>
-        <div class="pcard">${b.defCard !== null ? '✓' : '?'}</div>
+        <div class="pcard">${b.defCard > 0 ? '✓' : '?'}</div>
       </div>
       <div style="font-size:12px;color:#8b88a0;margin-top:8px;">${state.names[waitingFor]}이(가) 카드를 고르는 중...</div>`;
     }
