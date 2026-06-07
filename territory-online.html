@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>정복 오목</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0d0e14; color: #e8e6f0; min-height: 100vh; }
+
+  .wrap { max-width: 560px; margin: 0 auto; padding: 1.25rem 1rem; position: relative; z-index: 1; }
+
+  /* 설정 화면 배경 캔버스 */
+  #setup-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: none; }
+  #setup-bg.show { display: block; }
+  .title { font-size: 22px; font-weight: 800; color: #f0eeff; letter-spacing: -0.5px; }
+  .sub { font-size: 13px; color: #6b6880; margin-bottom: 1rem; }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  button { border: none; border-radius: 10px; padding: 11px 18px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.12s; }
+  .btn-primary { background: #4f8cff; color: white; width: 100%; }
+  .btn-primary:hover { background: #3d76e0; }
+  .btn-primary:disabled { background: #2a3550; color: #6b6880; cursor: default; }
+  .btn-ghost { background: #1a1c28; color: #a09cc0; border: 1px solid #2a2c3a; }
+  .btn-ghost:hover { background: #232533; }
+
+  .card-box { background: #15161f; border: 1px solid #23252f; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
+  h2 { font-size: 15px; font-weight: 600; color: #c8c4e0; margin-bottom: 12px; }
+
+  /* 플레이어 색상 */
+  .p0 { --pc: #ff5a6e; --pc-soft: #3a1820; }
+  .p1 { --pc: #4f8cff; --pc-soft: #16243f; }
+  .p2 { --pc: #34d399; --pc-soft: #0e3326; }
+  .p3 { --pc: #fbbf24; --pc-soft: #3a2e0c; }
+
+  /* 보드 */
+  .board-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .turn-tag { font-size: 14px; font-weight: 700; padding: 5px 14px; border-radius: 8px; background: var(--pc-soft); color: var(--pc); border: 1px solid var(--pc); }
+  .phase-hint { font-size: 12px; color: #8b88a0; margin-bottom: 10px; min-height: 18px; text-align:center; }
+
+  .board { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; background: #1a1c26; padding: 6px; border-radius: 12px; aspect-ratio: 1; }
+  .cell {
+    background: #0f1019; border-radius: 5px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background 0.1s; aspect-ratio: 1;
+  }
+  .cell.empty:hover { background: #1c1e2a; }
+  .cell.land-0 { background: rgba(255,90,110,0.22); }
+  .cell.land-1 { background: rgba(79,140,255,0.22); }
+  .cell.land-2 { background: rgba(52,211,153,0.22); }
+  .cell.land-3 { background: rgba(251,191,36,0.22); }
+  .cell.movable { box-shadow: inset 0 0 0 2px #ffffff66; cursor: pointer; }
+  .cell.movable:hover { background: #2a2d3d; }
+  .cell.stealable { box-shadow: inset 0 0 0 2px #fbbf24; cursor: pointer; animation: steal-pulse 0.9s ease-in-out infinite; }
+  @keyframes steal-pulse { 0%,100%{box-shadow: inset 0 0 0 2px #fbbf24;} 50%{box-shadow: inset 0 0 0 3px #fde68a;} }
+  .cell.on-path { background: #2f3550; box-shadow: inset 0 0 0 2px #93c5fd; }
+  .path-num { position: absolute; top: 1px; left: 2px; font-size: 9px; font-weight: 800; color: #93c5fd; z-index: 3; }
+  .lock-mark { position: absolute; top: 1px; right: 2px; font-size: 9px; z-index: 3; opacity: 0.8; }
+  .pawn {
+    width: 70%; height: 70%; border-radius: 50%; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: #fff;
+    box-shadow: 0 2px 6px #0008;
+  }
+  .pawn-0 { background: #ff5a6e; }
+  .pawn-1 { background: #4f8cff; }
+  .pawn-2 { background: #34d399; color:#06281c; }
+  .pawn-3 { background: #fbbf24; color:#3a2e0c; }
+  .pawn.selected { outline: 3px solid #fff; outline-offset: 1px; }
+
+  .players-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin: 12px 0; }
+  .pstat { background: #15161f; border: 1px solid #23252f; border-radius: 9px; padding: 7px 4px; text-align: center; }
+  .pstat.out { opacity: 0.35; }
+  .pstat.active-p { border-color: var(--pc); background: var(--pc-soft); }
+  .pstat .pname { font-size: 11px; font-weight: 700; color: var(--pc); }
+  .pstat .pland { font-size: 16px; font-weight: 800; color: #e8e6f0; margin-top: 2px; }
+  .pstat .plabel { font-size: 9px; color: #6b6880; }
+
+  .msg { padding: 10px 14px; border-radius: 9px; font-size: 13px; margin: 10px 0; line-height: 1.5; text-align:center; }
+  .msg.info { background: #16243f; color: #93c5fd; }
+  .msg.warn { background: #3a2e0c; color: #fbbf24; }
+
+  /* 전투 모달 */
+  .overlay { position: fixed; inset: 0; background: #000c; display: none; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+  .overlay.show { display: flex; }
+  .battle-box { background: #15161f; border: 1px solid #2a2c3a; border-radius: 16px; padding: 1.5rem; max-width: 400px; width: 100%; text-align: center; }
+  .battle-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .battle-sub { font-size: 12px; color: #8b88a0; margin-bottom: 1.25rem; }
+  .battle-vs { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 1.25rem; }
+  .battle-side { flex: 1; }
+  .battle-pawn { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 8px; display:flex; align-items:center; justify-content:center; font-weight:800; color:#fff; font-size:15px; }
+  .battle-name { font-size: 12px; font-weight: 700; }
+  .battle-vs-txt { font-size: 20px; font-weight: 800; color: #6b6880; }
+  .card-pick { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+  .pcard {
+    width: 48px; height: 62px; border-radius: 9px; border: 2px solid #2a2c3a;
+    background: #0f1019; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; cursor: pointer; transition: all 0.12s; color:#e8e6f0;
+  }
+  .pcard:hover { transform: translateY(-4px); border-color: #4f8cff; }
+  .pcard.revealed { cursor: default; }
+  .battle-result { font-size: 16px; font-weight: 800; margin-top: 1rem; min-height: 24px; }
+
+  .win-box { background: #0e3326; border: 1px solid #34d39955; border-radius: 16px; padding: 2rem; text-align: center; margin-bottom: 1rem; }
+  .win-title { font-size: 24px; font-weight: 800; color: #34d399; margin-bottom: 6px; }
+  .win-sub { font-size: 13px; color: #6b9a85; }
+
+  .legend { font-size: 11px; color: #6b6880; text-align: center; margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<canvas id="setup-bg"></canvas>
+<div class="wrap">
+
+  <!-- 로비 화면 -->
+  <div class="screen active" id="screen-lobby">
+    <div class="title">정복 오목</div>
+    <div class="sub">8×8 · 4인 영토 배틀로얄 · 온라인</div>
+    <div class="card-box">
+      <h2>내 이름</h2>
+      <input type="text" id="lobby-name" maxlength="8" placeholder="닉네임"
+        style="width:100%; padding:10px 12px; border-radius:9px; border:1px solid #2a2c3a; background:#0f1019; color:#e8e6f0; font-size:14px; font-family:inherit;">
+    </div>
+    <button class="btn-primary" id="btn-create" style="margin-bottom:10px;">방 만들기</button>
+    <div style="text-align:center; font-size:12px; color:#5a5870; margin-bottom:10px;">또는</div>
+    <div class="card-box">
+      <h2>방 코드로 참가</h2>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="lobby-code" maxlength="6" placeholder="6자리 코드"
+          style="flex:1; padding:10px 12px; border-radius:9px; border:1px solid #2a2c3a; background:#0f1019; color:#e8e6f0; font-size:16px; font-weight:700; letter-spacing:3px; text-transform:uppercase; font-family:inherit;">
+        <button class="btn-primary" id="btn-join" style="width:auto; padding:10px 18px;">참가</button>
+      </div>
+    </div>
+    <div id="lobby-msg"></div>
+    <div class="card-box">
+      <h2>규칙 요약</h2>
+      <div style="font-size:12.5px; line-height:1.75; color:#a09cc0;">
+        · 각자 말 1개로 시작, 빈 칸에 놓으면 그 칸이 내 땅<br>
+        · 자기 턴에 상하좌우 1~4칸 이동(꺾기 가능), 멈춘 빈 칸은 내 땅<br>
+        · 경로의 상대 땅은 통과 가능, 상대 말을 만나면 전투<br>
+        · 전투는 1~4 카드를 뽑아 높은 쪽 승리<br>
+        · 승자는 패자 땅 하나를 뺏어 한 바퀴 고정 · 패자는 후퇴<br>
+        · 첫 한 바퀴는 전투 금지 · 승리: 5목 / 최후 생존 / 최다 영토
+      </div>
+    </div>
+  </div>
+
+  <!-- 대기 화면 -->
+  <div class="screen" id="screen-wait">
+    <div class="title">정복 오목</div>
+    <div class="card-box" style="text-align:center;">
+      <h2>방 코드</h2>
+      <div id="wait-code" style="font-size:34px; font-weight:800; letter-spacing:8px; color:#4f8cff; padding:0.5rem 0;">------</div>
+      <button class="btn-ghost" id="btn-copy" style="width:100%; margin-top:6px;">코드 복사</button>
+    </div>
+    <div class="card-box">
+      <h2>참가자 (<span id="wait-count">1</span>/4)</h2>
+      <div id="wait-players"></div>
+    </div>
+    <button class="btn-primary" id="btn-begin" style="display:none;">게임 시작 (방장)</button>
+    <div id="wait-hint" class="msg info" style="text-align:center;">4명이 모이면 방장이 시작할 수 있어요</div>
+    <button class="btn-ghost" id="btn-leave-wait" style="width:100%; margin-top:10px;">나가기</button>
+  </div>
+
+  <!-- 게임 화면 -->
+  <div class="screen" id="screen-game">
+    <div class="board-info">
+      <div class="title" style="font-size:18px;">정복 오목</div>
+      <div class="turn-tag" id="turn-tag">-</div>
+    </div>
+    <div class="phase-hint" id="phase-hint"></div>
+    <div class="board" id="board"></div>
+    <div class="players-strip" id="players-strip"></div>
+    <div id="game-msg"></div>
+    <div class="legend">밝게 표시된 칸 = 이동 가능 · 자기 말을 누르면 이동 범위가 보입니다</div>
+    <button class="btn-ghost" id="btn-restart" style="width:100%; margin-top:10px;">처음으로</button>
+  </div>
+
+  <!-- 승리 화면 -->
+  <div class="screen" id="screen-win">
+    <div id="win-content"></div>
+    <button class="btn-primary" id="btn-win-restart">새 게임</button>
+  </div>
+</div>
+
+<!-- 전투 모달 -->
+<div class="overlay" id="battle-overlay">
+  <div class="battle-box">
+    <div class="battle-title">⚔️ 전투</div>
+    <div class="battle-sub" id="battle-sub">카드를 뽑아 승부</div>
+    <div class="battle-vs">
+      <div class="battle-side">
+        <div class="battle-pawn" id="battle-pawn-a"></div>
+        <div class="battle-name" id="battle-name-a"></div>
+      </div>
+      <div class="battle-vs-txt">VS</div>
+      <div class="battle-side">
+        <div class="battle-pawn" id="battle-pawn-b"></div>
+        <div class="battle-name" id="battle-name-b"></div>
+      </div>
+    </div>
+    <div id="battle-pick-area"></div>
+    <div class="battle-result" id="battle-result"></div>
+    <button class="btn-primary" id="battle-continue" style="display:none; margin-top:1rem;">계속</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, update, onValue, off, onDisconnect } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCZn0R7MwtcBULJRUM6jZbSUcaRv1Q_nZE",
+  databaseURL: "https://blind-formula-battle-default-rtdb.firebaseio.com",
+  projectId: "blind-formula-battle",
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
+
+const SIZE = 8;
+const COLORS = ['#ff5a6e', '#4f8cff', '#34d399', '#fbbf24'];
+const DEFAULT_NAMES = ['플레이어 1', '플레이어 2', '플레이어 3', '플레이어 4'];
+
+let state = null;
+
+// ===== 온라인 멀티플레이 =====
+let myName = '';
+let mySeat = -1;        // 내 좌석 번호 (0~3) = 플레이어 인덱스
+let roomCode = '';
+let roomRef = null;
+let gameListener = null;
+let isHost = false;
+// 로컬 전용(서버에 안 올림): 경로 그리기 중간 상태
+// selected, path는 state에 있지만 내 화면에서만 쓰고 확정 시점에만 서버 반영
+
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random()*chars.length)];
+  return c;
+}
+
+function makeInitialState(names) {
+  // 턴 순서: 1~4 카드 뽑기 = 랜덤 셔플
+  const order = [0,1,2,3].sort(() => Math.random() - 0.5);
+  return {
+    names,
+    order,              // 턴 진행 순서 (플레이어 인덱스 배열)
+    orderPos: 0,        // 현재 order 내 위치
+    phase: 'place',     // 'place'(초기 배치) | 'play'
+    placedCount: 0,     // 배치 완료한 플레이어 수
+    turnCount: 0,       // 전역 턴 진행 수 (고정 해제 타이밍용)
+    board: Array.from({length: SIZE*SIZE}, () => ({ owner: -1, pawn: -1, lockedUntil: -1 })), // lockedUntil: 이 턴카운트 전까지 고정
+    pawnPos: [-1,-1,-1,-1], // 각 플레이어 말 위치 (셀 인덱스)
+    alive: [true,true,true,true],
+    selected: null,     // 선택된 말의 시작 셀
+    path: [],           // 그리는 중인 이동 경로 (셀 인덱스 순서)
+    stealMode: null,    // 전투 승리 후 땅 뺏기 선택 모드
+    retreatMode: null,  // 패배 후 후퇴 위치 선택 모드
+    winner: null,
+    winReason: '',
+  };
+}
+
+function idx(r, c) { return r * SIZE + c; }
+function rc(i) { return [Math.floor(i / SIZE), i % SIZE]; }
+
+// 고정 여부: lockedUntil이 현재 턴카운트보다 크면 고정 상태
+function isLocked(cell) { return cell.lockedUntil > state.turnCount; }
+
+// 전투 보호 기간: play 시작 후 첫 한 바퀴(turnCount 0~3)는 전투 금지
+function inBattleProtection() { return state.phase === 'play' && state.turnCount < 4; }
+
+function currentPlayer() {
+  return state.order[state.orderPos];
+}
+
+function landCount(p) {
+  return state.board.filter(c => c.owner === p).length;
+}
+
+function emptyCount() {
+  return state.board.filter(c => c.owner === -1).length;
+}
+
+// ===== 화면 전환 =====
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  // 설정 화면에서만 배경 연출
+  const bg = document.getElementById('setup-bg');
+  if (bg) {
+    if (id === 'lobby') { bg.classList.add('show'); startSetupBg(); }
+    else { bg.classList.remove('show'); stopSetupBg(); }
+  }
+}
+
+// ===== 로비: 방 만들기 / 참가 =====
+function lobbyMsg(t, type='error') {
+  document.getElementById('lobby-msg').innerHTML = t ? `<div class="msg ${type}" style="margin-top:10px;">${t}</div>` : '';
+}
+
+document.getElementById('btn-create').addEventListener('click', async () => {
+  myName = document.getElementById('lobby-name').value.trim();
+  if (!myName) { lobbyMsg('이름을 입력하세요.'); return; }
+  roomCode = genCode();
+  roomRef = ref(db, 'territory/' + roomCode);
+  mySeat = 0;
+  isHost = true;
+  const initial = {
+    phase: 'lobby',
+    seats: { 0: myName, 1: '', 2: '', 3: '' },
+    presence: { 0: true, 1: false, 2: false, 3: false },
+    host: 0,
+    game: null, // 게임 시작되면 state가 들어감
+    leftBy: -1,
+  };
+  await set(roomRef, initial);
+  setupPresence();
+  document.getElementById('wait-code').textContent = roomCode;
+  showScreen('wait');
+  startRoomListener();
+});
+
+document.getElementById('btn-join').addEventListener('click', async () => {
+  myName = document.getElementById('lobby-name').value.trim();
+  const code = document.getElementById('lobby-code').value.trim().toUpperCase();
+  if (!myName) { lobbyMsg('이름을 입력하세요.'); return; }
+  if (code.length !== 6) { lobbyMsg('6자리 코드를 입력하세요.'); return; }
+  const snap = await get(ref(db, 'territory/' + code));
+  if (!snap.exists()) { lobbyMsg('방을 찾을 수 없습니다.'); return; }
+  const data = snap.val();
+  if (data.phase !== 'lobby') { lobbyMsg('이미 시작된 방입니다.'); return; }
+  // 빈 좌석 찾기
+  let seat = -1;
+  for (let i = 0; i < 4; i++) { if (!data.seats[i]) { seat = i; break; } }
+  if (seat === -1) { lobbyMsg('방이 가득 찼습니다.'); return; }
+  roomCode = code;
+  roomRef = ref(db, 'territory/' + roomCode);
+  mySeat = seat;
+  isHost = false;
+  await update(roomRef, { [`seats/${seat}`]: myName, [`presence/${seat}`]: true });
+  setupPresence();
+  document.getElementById('wait-code').textContent = roomCode;
+  showScreen('wait');
+  startRoomListener();
+});
+
+function setupPresence() {
+  const presRef = ref(db, 'territory/' + roomCode + '/presence/' + mySeat);
+  set(presRef, true);
+  onDisconnect(presRef).set(false);
+}
+
+document.getElementById('btn-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(roomCode).then(() => {
+    const b = document.getElementById('btn-copy');
+    b.textContent = '복사됨!'; setTimeout(() => b.textContent = '코드 복사', 1500);
+  });
+});
+
+document.getElementById('btn-leave-wait').addEventListener('click', () => leaveRoom());
+document.getElementById('btn-begin').addEventListener('click', startGameAsHost);
+document.getElementById('btn-restart').addEventListener('click', () => leaveRoom());
+document.getElementById('btn-win-restart').addEventListener('click', () => leaveRoom());
+
+// 방 상태 구독
+function startRoomListener() {
+  if (gameListener && roomRef) off(roomRef, 'value', gameListener);
+  gameListener = onValue(roomRef, (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.val();
+    handleRoom(data);
+  });
+}
+
+function handleRoom(data) {
+  if (data.phase === 'lobby') {
+    renderWait(data);
+  } else if (data.phase === 'playing' || (data.game && data.game.phase)) {
+    // 게임 진행 중 — 서버 state 렌더 + 이탈 감지
+    onGameUpdate(data);
+    showDisconnect(data.presence || {}, data.seats || {});
+  }
+}
+
+// 게임 중 연결 끊긴 플레이어 표시
+function showDisconnect(pres, seats) {
+  const offline = [];
+  for (let i = 0; i < 4; i++) {
+    if (seats[i] && pres[i] === false && state && state.alive && state.alive[i]) offline.push(state.names[i] || seats[i]);
+  }
+  const msgEl = document.getElementById('game-msg');
+  if (offline.length > 0 && !state.stealMode && !state.retreatMode && !state.battle) {
+    msgEl.innerHTML = `<div class="msg warn">⚠ ${offline.join(', ')} 연결 끊김</div>`;
+  }
+}
+
+function renderWait(data) {
+  showScreen('wait');
+  const seats = data.seats || {};
+  const pres = data.presence || {};
+  let count = 0;
+  let html = '';
+  for (let i = 0; i < 4; i++) {
+    const name = seats[i];
+    if (name) count++;
+    const online = pres[i];
+    html += `<div style="display:flex; align-items:center; gap:8px; padding:6px 0;">
+      <span style="width:12px;height:12px;border-radius:50%;background:${COLORS[i]};flex-shrink:0;"></span>
+      <span style="font-size:14px; color:${name ? '#e8e6f0' : '#5a5870'};">${name || '대기 중...'}</span>
+      ${name && i === data.host ? '<span style="font-size:10px;color:#4f8cff;">(방장)</span>' : ''}
+      ${name && i === mySeat ? '<span style="font-size:10px;color:#34d399;">(나)</span>' : ''}
+      ${name && !online ? '<span style="font-size:10px;color:#ff5a6e;">(연결 끊김)</span>' : ''}
+    </div>`;
+  }
+  document.getElementById('wait-players').innerHTML = html;
+  document.getElementById('wait-count').textContent = count;
+
+  // 방장이고 4명 모이면 시작 버튼
+  const beginBtn = document.getElementById('btn-begin');
+  const hint = document.getElementById('wait-hint');
+  if (mySeat === data.host && count === 4) {
+    beginBtn.style.display = 'block';
+    hint.style.display = 'none';
+  } else {
+    beginBtn.style.display = 'none';
+    hint.style.display = 'block';
+    hint.textContent = count < 4 ? `4명이 모이면 시작할 수 있어요 (${count}/4)` : '방장이 시작하기를 기다리는 중...';
+  }
+}
+
+async function startGameAsHost() {
+  // 방장이 게임 초기 상태 생성 (이름은 좌석 순서대로)
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  const names = [0,1,2,3].map(i => data.seats[i] || DEFAULT_NAMES[i]);
+  const g = makeInitialState(names);
+  await update(roomRef, { phase: 'playing', game: serializeState(g) });
+}
+
+function leaveRoom() {
+  if (gameListener && roomRef) off(roomRef, 'value', gameListener);
+  if (roomRef && mySeat >= 0) {
+    update(roomRef, { [`seats/${mySeat}`]: '', [`presence/${mySeat}`]: false }).catch(()=>{});
+  }
+  gameListener = null; roomRef = null; roomCode = ''; mySeat = -1; isHost = false;
+  showScreen('lobby');
+}
+
+// 게임 상태를 Firebase에 안전하게 저장 (배열/객체 보존)
+function serializeState(g) {
+  return {
+    names: g.names,
+    order: g.order,
+    orderPos: g.orderPos,
+    phase: g.phase,
+    placedCount: g.placedCount,
+    turnCount: g.turnCount,
+    // board: 각 셀을 {o, p, l} 축약. Firebase 배열 인덱스 보존 위해 객체로
+    board: g.board.map(c => ({ o: c.owner, p: c.pawn, l: c.lockedUntil })),
+    pawnPos: g.pawnPos,
+    alive: g.alive,
+    winner: g.winner,
+    winReason: g.winReason,
+    // stealMode/retreatMode는 동기화 필요 (한 명이 고르는 동안 나머지가 봄)
+    stealMode: g.stealMode ? {
+      winner: g.stealMode.winner, loser: g.stealMode.loser,
+      stealable: g.stealMode.stealable, isChain: g.stealMode.isChain || false,
+      atkWins: g.stealMode.atkWins ?? null, ctx: g.stealMode.ctx,
+    } : null,
+    retreatMode: g.retreatMode ? {
+      loser: g.retreatMode.loser, lands: g.retreatMode.lands,
+    } : null,
+    // 진행 중인 전투 (카드 뽑기 동기화). 0=미선택 (null은 Firebase가 삭제하므로 금지)
+    battle: g.battle ? {
+      attacker: g.battle.attacker, defender: g.battle.defender,
+      target: g.battle.target, attackerFrom: g.battle.attackerFrom,
+      chain: g.battle.chain || false,
+      atkCard: g.battle.atkCard || 0, defCard: g.battle.defCard || 0,
+    } : null,
+  };
+}
+
+// Firebase 데이터를 로컬 state로 복원
+function deserializeState(d) {
+  return {
+    names: d.names || DEFAULT_NAMES.slice(),
+    order: d.order || [0,1,2,3],
+    orderPos: d.orderPos || 0,
+    phase: d.phase || 'place',
+    placedCount: d.placedCount || 0,
+    turnCount: d.turnCount || 0,
+    board: (d.board || []).map(c => ({ owner: c.o, pawn: c.p, lockedUntil: c.l })),
+    pawnPos: d.pawnPos || [-1,-1,-1,-1],
+    alive: d.alive || [true,true,true,true],
+    selected: null,  // 로컬 전용
+    path: [],        // 로컬 전용
+    stealMode: d.stealMode || null,
+    retreatMode: d.retreatMode || null,
+    winner: (d.winner === undefined ? null : d.winner),
+    winReason: d.winReason || '',
+    battle: d.battle ? {
+      attacker: d.battle.attacker, defender: d.battle.defender,
+      target: d.battle.target, attackerFrom: d.battle.attackerFrom,
+      chain: d.battle.chain || false,
+      atkCard: d.battle.atkCard || 0,  // Firebase가 0/null 삭제해도 0으로 복원
+      defCard: d.battle.defCard || 0,
+    } : null,
+  };
+}
+
+// 서버에 현재 state 반영
+async function pushState() {
+  if (!roomRef) return;
+  await update(roomRef, { game: serializeState(state) });
+}
+
+// 서버 게임 상태 수신 → 로컬 state 갱신 → 렌더
+function onGameUpdate(data) {
+  if (!data.game) return;
+  // 내가 그리던 경로는 보존 (내 턴이고 아직 확정 안 했으면)
+  const prevSelected = state ? state.selected : null;
+  const prevPath = state ? state.path : [];
+
+  state = deserializeState(data.game);
+
+  // 내 턴이고 모드(steal/retreat)가 아니면 그리던 경로 복원
+  const myTurn = (currentPlayer() === mySeat);
+  if (myTurn && !state.stealMode && !state.retreatMode && state.phase === 'play') {
+    state.selected = prevSelected;
+    state.path = prevPath || [];
+  }
+
+  if (document.getElementById('screen-game').classList.contains('active') === false) {
+    showScreen('game');
+  }
+  render();
+}
+
+// (직선 이동 방식은 경로 그리기로 대체됨)
+
+// ===== 렌더 =====
+function render() {
+  if (state.winner !== null) { renderWin(); return; }
+
+  // 전투 모달 (있으면 표시, 없으면 숨김)
+  const ov = document.getElementById('battle-overlay');
+  if (state.battle) {
+    renderBattle();
+  } else {
+    ov.classList.remove('show');
+  }
+
+  const p = currentPlayer();
+  const tag = document.getElementById('turn-tag');
+  tag.textContent = state.names[p] + ' 차례';
+  tag.className = 'turn-tag p' + p;
+  tag.style.setProperty('--pc', COLORS[p]);
+
+  const hint = document.getElementById('phase-hint');
+  if (state.stealMode) {
+    hint.textContent = '뺏을 땅을 선택하세요';
+  } else if (state.retreatMode) {
+    hint.textContent = '후퇴할 땅을 선택하세요';
+  } else if (state.phase === 'place') {
+    hint.textContent = `초기 배치 — 빈 칸을 눌러 말을 놓으세요 (${state.placedCount}/4)`;
+  } else if (state.selected !== null) {
+    hint.textContent = `경로를 그리세요 (${state.path.length}/4칸) — 인접 칸 클릭, 마지막 칸 다시 누르면 확정`;
+  } else {
+    hint.textContent = '자기 말을 눌러 선택하세요';
+  }
+
+  // 보드
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+  // 경로 그리는 중이면 다음 갈 수 있는 인접 칸 계산
+  let nextCells = [];
+  if (state.phase === 'play' && state.selected !== null && !state.stealMode && state.path.length < 4) {
+    const end = state.path.length > 0 ? state.path[state.path.length - 1] : state.selected;
+    const [er, ec] = rc(end);
+    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const nr = er+dr, nc = ec+dc;
+      if (nr<0||nr>=SIZE||nc<0||nc>=SIZE) continue;
+      const ci = idx(nr, nc);
+      if (ci === state.selected || state.path.includes(ci)) continue;
+      const tc = state.board[ci];
+      if (tc.pawn === p) continue; // 내 말 통과 불가
+      if (tc.pawn !== -1 && tc.pawn !== p && inBattleProtection()) continue; // 보호 기간엔 적 말 칸 제외
+      nextCells.push(ci);
+    }
+  }
+  const stealable = state.stealMode ? state.stealMode.stealable : [];
+  const retreatable = state.retreatMode ? state.retreatMode.lands : [];
+  for (let i = 0; i < SIZE*SIZE; i++) {
+    const cell = state.board[i];
+    const div = document.createElement('div');
+    div.className = 'cell';
+    if (cell.owner === -1) div.classList.add('empty');
+    else div.classList.add('land-' + cell.owner);
+    if (nextCells.includes(i)) div.classList.add('movable');
+    if (state.path.includes(i)) div.classList.add('on-path');
+    if (stealable.includes(i)) div.classList.add('stealable');
+    if (retreatable.includes(i)) div.classList.add('stealable');
+    if (isLocked(cell)) {
+      const lock = document.createElement('div');
+      lock.className = 'lock-mark';
+      lock.textContent = '🔒';
+      div.appendChild(lock);
+    }
+    // 경로 순번 표시
+    const pathOrder = state.path.indexOf(i);
+    if (pathOrder >= 0) {
+      const num = document.createElement('div');
+      num.className = 'path-num';
+      num.textContent = pathOrder + 1;
+      div.appendChild(num);
+    }
+    if (cell.pawn !== -1) {
+      const pawn = document.createElement('div');
+      pawn.className = 'pawn pawn-' + cell.pawn;
+      pawn.textContent = cell.pawn + 1;
+      if (state.selected === i) pawn.classList.add('selected');
+      div.appendChild(pawn);
+    }
+    div.addEventListener('click', () => onCellClick(i));
+    boardEl.appendChild(div);
+  }
+
+  // 플레이어 현황
+  const strip = document.getElementById('players-strip');
+  strip.innerHTML = '';
+  for (let pi = 0; pi < 4; pi++) {
+    const div = document.createElement('div');
+    div.className = 'pstat p' + pi + (state.alive[pi] ? '' : ' out') + (pi === p ? ' active-p' : '');
+    div.style.setProperty('--pc', COLORS[pi]);
+    div.style.setProperty('--pc-soft', getSoft(pi));
+    div.innerHTML = `
+      <div class="pname">${state.names[pi]}</div>
+      <div class="pland">${state.alive[pi] ? landCount(pi) : '✗'}</div>
+      <div class="plabel">${state.alive[pi] ? '땅' : '탈락'}</div>
+    `;
+    strip.appendChild(div);
+  }
+}
+
+function getSoft(p) {
+  return ['#3a1820','#16243f','#0e3326','#3a2e0c'][p];
+}
+
+// ===== 셀 클릭 =====
+function onCellClick(i) {
+  if (state.winner !== null) return;
+
+  // 온라인: 지금 행동할 권한이 있는 사람만 조작 가능
+  if (state.stealMode) {
+    if (state.stealMode.winner !== mySeat) return; // 뺏는 사람만
+    doLandSteal(i);
+    return;
+  }
+  if (state.retreatMode) {
+    if (state.retreatMode.loser !== mySeat) return; // 후퇴하는 사람만
+    doRetreatPick(i);
+    return;
+  }
+  // 일반 플레이/배치: 현재 턴인 사람만
+  if (currentPlayer() !== mySeat) return;
+
+  const p = currentPlayer();
+  const cell = state.board[i];
+
+  if (state.phase === 'place') {
+    // 초기 배치: 빈 칸(말 없고 땅 없음)에만
+    if (cell.owner === -1 && cell.pawn === -1) {
+      cell.owner = p;
+      cell.pawn = p;
+      state.pawnPos[p] = i;
+      state.placedCount++;
+      if (state.placedCount === 4) {
+        state.phase = 'play';
+        state.orderPos = 0;
+        state.turnCount = 0; // play 시작 기준 리셋 (0~3 = 첫 한 바퀴 = 전투 금지)
+      } else {
+        advanceTurn();
+      }
+      render();
+      pushState(); // 서버 반영
+    }
+    return;
+  }
+
+  // play 단계 — 경로 그리기
+  if (state.selected === null) {
+    // 자기 말 선택 → 경로 시작
+    if (cell.pawn === p) { state.selected = i; state.path = []; render(); }
+    return;
+  }
+
+  // 말 선택됨 — 경로 그리는 중
+  if (i === state.selected && state.path.length === 0) {
+    // 시작 말 다시 클릭 → 선택 취소
+    state.selected = null; render(); return;
+  }
+
+  const pathEnd = state.path.length > 0 ? state.path[state.path.length - 1] : state.selected;
+
+  // 경로 되돌리기: 직전 칸 다시 클릭하면 한 칸 취소
+  if (state.path.length > 0 && i === state.path[state.path.length - 1]) {
+    confirmMove(p); // 같은 칸 재클릭 = 여기서 멈춤(확정)
+    return;
+  }
+  if (state.path.length >= 2 && i === state.path[state.path.length - 2]) {
+    state.path.pop(); render(); return;
+  }
+  if (state.path.length === 1 && i === state.selected) {
+    state.path.pop(); render(); return;
+  }
+
+  // 인접 칸인지 확인
+  if (!isAdjacent(pathEnd, i)) return;
+  // 최대 4칸
+  if (state.path.length >= 4) return;
+  // 이미 지난 칸/시작점 재방문 금지
+  if (i === state.selected || state.path.includes(i)) return;
+
+  const tcell = state.board[i];
+  // 적 말 칸
+  if (tcell.pawn !== -1 && tcell.pawn !== p) {
+    // 첫 한 바퀴는 전투 금지 → 진입 불가
+    if (inBattleProtection()) {
+      document.getElementById('game-msg').innerHTML = `<div class="msg warn">첫 한 바퀴 동안은 전투할 수 없습니다</div>`;
+      return;
+    }
+    // 적 말 칸 → 경로에 추가하고 즉시 전투
+    state.path.push(i);
+    render();
+    confirmMove(p);
+    return;
+  }
+  // 내 말 칸은 못 지나감 (시작점 외엔 없음)
+  if (tcell.pawn === p) return;
+
+  // 빈 칸 → 경로에 추가 (계속 그리거나 확정 가능)
+  state.path.push(i);
+  render();
+}
+
+function isAdjacent(a, b) {
+  const [ra, ca] = rc(a), [rb, cb] = rc(b);
+  return Math.abs(ra - rb) + Math.abs(ca - cb) === 1;
+}
+
+// ===== 이동 확정 (경로 끝으로) =====
+function confirmMove(p) {
+  if (state.path.length === 0) { state.selected = null; render(); return; }
+  const target = state.path[state.path.length - 1];
+  const from = state.selected;
+  const cell = state.board[target];
+
+  state.path = [];
+  state.selected = null;
+
+  if (cell.pawn !== -1 && cell.pawn !== p) {
+    // 경로 끝이 적 말 → 전투
+    startBattle(p, cell.pawn, target, from);
+  } else {
+    // 빈 칸 → 말 이동 + 점령
+    state.board[from].pawn = -1;
+    moveePawnTo(p, target);
+    afterAction(p);
+  }
+}
+
+// 말을 target으로 옮기고, 빈 땅이면 점령 (주인 바뀐 땅 불변)
+function moveePawnTo(p, target) {
+  const cell = state.board[target];
+  cell.pawn = p;
+  if (cell.owner === -1) cell.owner = p; // 빈 땅만 점령, 이미 주인 있으면 불변
+  state.pawnPos[p] = target;
+}
+
+// ===== 전투 (온라인: state.battle로 동기화) =====
+// battle = { attacker, defender, target, attackerFrom, chain, atkCard, defCard }
+
+function startBattle(attacker, defender, target, attackerFrom) {
+  state.battle = {
+    attacker, defender, target, attackerFrom,
+    chain: false, atkCard: 0, defCard: 0,  // 0 = 미선택 (Firebase가 null을 삭제하므로)
+  };
+  render();
+  pushState();
+}
+
+function startChainBattle(loser, enemy, dest) {
+  state.battle = {
+    attacker: loser, defender: enemy, target: dest, attackerFrom: -1,
+    chain: true, atkCard: 0, defCard: 0,
+  };
+  render();
+  pushState();
+}
+
+// 전투 모달 렌더 (모든 플레이어가 봄)
+function renderBattle() {
+  const b = state.battle;
+  const ov = document.getElementById('battle-overlay');
+  ov.classList.add('show');
+  document.getElementById('battle-sub').textContent = b.chain ? '후퇴 중 연쇄 전투!' : '';
+
+  const pa = document.getElementById('battle-pawn-a');
+  pa.style.background = COLORS[b.attacker]; pa.textContent = b.attacker+1;
+  document.getElementById('battle-name-a').textContent = state.names[b.attacker];
+  const pb = document.getElementById('battle-pawn-b');
+  pb.style.background = COLORS[b.defender]; pb.textContent = b.defender+1;
+  document.getElementById('battle-name-b').textContent = state.names[b.defender];
+
+  const area = document.getElementById('battle-pick-area');
+  const resultEl = document.getElementById('battle-result');
+  const contBtn = document.getElementById('battle-continue');
+  contBtn.style.display = 'none';
+  resultEl.textContent = '';
+
+  const bothDone = b.atkCard > 0 && b.defCard > 0;
+
+  if (!bothDone) {
+    // 카드 뽑기 단계
+    const myRole = (mySeat === b.attacker) ? 'atk' : (mySeat === b.defender) ? 'def' : null;
+    const iNeedToPick = (myRole === 'atk' && !(b.atkCard > 0)) || (myRole === 'def' && !(b.defCard > 0));
+    const waitingFor = !(b.atkCard > 0) ? b.attacker : b.defender;
+
+    if (iNeedToPick) {
+      area.innerHTML = `<div style="font-size:12px;margin-bottom:6px;font-weight:700;color:${COLORS[mySeat]}">카드를 고르세요</div>`;
+      const row = document.createElement('div');
+      row.className = 'card-pick';
+      [1,2,3,4].forEach(n => {
+        const c = document.createElement('div');
+        c.className = 'pcard'; c.textContent = '?';
+        c.addEventListener('click', () => pickBattleCard(myRole, n));
+        row.appendChild(c);
+      });
+      area.appendChild(row);
+    } else {
+      // 내 차례 아님 — 누구 뽑는 중인지 표시
+      area.innerHTML = `<div class="card-pick" style="opacity:0.5;">
+        <div class="pcard">${b.atkCard > 0 ? '✓' : '?'}</div>
+        <div style="display:flex;align-items:center;font-weight:800;color:#6b6880;">vs</div>
+        <div class="pcard">${b.defCard > 0 ? '✓' : '?'}</div>
+      </div>
+      <div style="font-size:12px;color:#8b88a0;margin-top:8px;">${state.names[waitingFor]}이(가) 카드를 고르는 중...</div>`;
+    }
+  } else {
+    // 양쪽 다 뽑음 — 결과 공개
+    area.innerHTML = `<div class="card-pick">
+      <div class="pcard revealed" style="border-color:${COLORS[b.attacker]};color:${COLORS[b.attacker]}">${b.atkCard}</div>
+      <div style="display:flex;align-items:center;font-weight:800;color:#6b6880;">vs</div>
+      <div class="pcard revealed" style="border-color:${COLORS[b.defender]};color:${COLORS[b.defender]}">${b.defCard}</div>
+    </div>`;
+    const atkWins = b.atkCard > b.defCard;
+    const winner = atkWins ? b.attacker : b.defender;
+    resultEl.innerHTML = `<span style="color:${COLORS[winner]}">${state.names[winner]} 승리!</span>`;
+    // 승자만 "계속" 버튼으로 다음 단계 진행 (한 명만 진행해야 중복 안 됨)
+    if (mySeat === winner) {
+      contBtn.style.display = 'block';
+      contBtn.onclick = () => resolveBattleResult();
+    } else {
+      document.getElementById('battle-sub').textContent = `${state.names[winner]}이(가) 진행 중...`;
+    }
+  }
+}
+
+// 카드 선택 → 서버 반영
+function pickBattleCard(role, n) {
+  if (role === 'atk') state.battle.atkCard = n;
+  else state.battle.defCard = n;
+  render();
+  pushState();
+}
+
+// 전투 결과 적용 (승자 클라이언트만 호출)
+function resolveBattleResult() {
+  const b = state.battle;
+  const atkWins = b.atkCard > b.defCard;
+  const winner = atkWins ? b.attacker : b.defender;
+  const loser = atkWins ? b.defender : b.attacker;
+  const ctx = { attacker: b.attacker, defender: b.defender, target: b.target, attackerFrom: b.attackerFrom, chain: b.chain, atkWins };
+  state.battle = null; // 전투 종료
+  document.getElementById('battle-overlay').classList.remove('show');
+  if (b.chain) {
+    startLandStealChain(winner, loser, ctx, atkWins);
+  } else {
+    startLandSteal(winner, loser, ctx);
+  }
+}
+
+// 뺏을 수 있는 패자의 땅 목록 (현재 고정 아닌 것). 전부 고정이면 그 패자 고정 즉시 해제.
+function getStealableLands(loser) {
+  let lands = [];
+  for (let i = 0; i < SIZE*SIZE; i++) {
+    if (state.board[i].owner === loser && !isLocked(state.board[i])) lands.push(i);
+  }
+  if (lands.length === 0) {
+    // 패자가 고정 땅만 보유 → 그 패자의 고정 전부 즉시 해제
+    for (let i = 0; i < SIZE*SIZE; i++) {
+      if (state.board[i].owner === loser && isLocked(state.board[i])) {
+        state.board[i].lockedUntil = -1;
+        lands.push(i);
+      }
+    }
+  }
+  return lands;
+}
+
+function startLandSteal(winner, loser, ctx) {
+  const stealable = getStealableLands(loser);
+
+  if (stealable.length === 0) {
+    // 패자가 땅이 아예 없음 → 뺏을 것 없이 바로 말 처리
+    finishBattleMovement(winner, loser, ctx);
+    return;
+  }
+
+  // 승자에게 뺏을 땅 선택을 요청 (보드에서 클릭)
+  state.stealMode = { winner, loser, ctx, stealable };
+  render();
+  const msg = document.getElementById('game-msg');
+  msg.innerHTML = `<div class="msg warn">${state.names[winner]}: 뺏을 ${state.names[loser]}의 땅을 선택하세요 (반짝이는 칸)</div>`;
+}
+
+function doLandSteal(cellIdx) {
+  const sm = state.stealMode;
+  if (!sm.stealable.includes(cellIdx)) return;
+  const { winner, loser, ctx } = sm;
+  const isChain = sm.isChain;
+  const atkWins = sm.atkWins;
+  // 땅 뺏기: 주인 변경 + 한 바퀴(4턴) 고정
+  state.board[cellIdx].owner = winner;
+  state.board[cellIdx].lockedUntil = state.turnCount + 4;
+  state.stealMode = null;
+  if (isChain) {
+    finishChainMovement(winner, loser, ctx, atkWins);
+  } else {
+    finishBattleMovement(winner, loser, ctx);
+  }
+}
+
+// 땅 뺏기 후 말 이동/후퇴 처리
+function finishBattleMovement(winner, loser, ctx) {
+  const { attacker, defender, attackerFrom } = ctx;
+  if (winner === attacker) {
+    // 공격자 승리: 말은 출발 칸에 그대로. 수비자만 후퇴.
+    retreat(defender, -1);
+  } else {
+    // 수비자 승리: 공격자 후퇴, 수비자 제자리
+    if (attackerFrom >= 0) state.board[attackerFrom].pawn = -1;
+    state.pawnPos[attacker] = -1;
+    retreat(attacker, -1);
+  }
+}
+
+// 패자 후퇴: 자기 땅 중 하나 선택. excludeCell은 방금 진 칸(재진입 금지).
+// 후퇴가 완전히 끝나면 afterAction으로 턴 종료.
+function retreat(loser, excludeCell = -1) {
+  const myLands = [];
+  for (let i = 0; i < SIZE*SIZE; i++) {
+    if (state.board[i].owner === loser && i !== excludeCell) myLands.push(i);
+  }
+  const oldPos = state.pawnPos[loser];
+  if (oldPos >= 0 && state.board[oldPos].pawn === loser) state.board[oldPos].pawn = -1;
+  state.pawnPos[loser] = -1;
+
+  if (myLands.length === 0) {
+    eliminate(loser);
+    afterAction(currentPlayer());
+    return;
+  }
+  if (myLands.length === 1) {
+    placeRetreat(loser, myLands[0]);
+    return;
+  }
+  // 여러 곳 → 패자가 직접 선택 (서버 동기화)
+  state.retreatMode = { loser, lands: myLands };
+  render();
+  pushState();
+}
+
+// 후퇴 위치 확정: 빈 땅이면 안착, 적 있으면 연쇄 전투
+function placeRetreat(loser, dest) {
+  state.retreatMode = null;
+  const enemy = state.board[dest].pawn;
+  if (enemy !== -1 && enemy !== loser) {
+    // 연쇄 전투 시작 (서버 동기화)
+    startChainBattle(loser, enemy, dest);
+  } else {
+    state.board[dest].pawn = loser;
+    state.pawnPos[loser] = dest;
+    afterAction(currentPlayer());
+  }
+}
+
+function doRetreatPick(cellIdx) {
+  const { loser, lands } = state.retreatMode;
+  if (!lands.includes(cellIdx)) return;
+  placeRetreat(loser, cellIdx);
+}
+
+function startLandStealChain(winner, loser, ctx, atkWins) {
+  const stealable = getStealableLands(loser);
+  if (stealable.length === 0) { finishChainMovement(winner, loser, ctx, atkWins); return; }
+  state.stealMode = { winner, loser, ctx, stealable, isChain: true, atkWins };
+  render();
+  pushState();
+}
+
+function finishChainMovement(winner, loser, ctx, atkWins) {
+  if (atkWins) {
+    // 후퇴자가 이 땅에 자리잡음, 기존 점유자 또 후퇴(이 칸 제외)
+    state.board[ctx.target].pawn = ctx.attacker;
+    state.pawnPos[ctx.attacker] = ctx.target;
+    retreat(ctx.defender, ctx.target);
+  } else {
+    // 후퇴자가 또 짐 → 진 칸 제외하고 다시 후퇴
+    retreat(ctx.attacker, ctx.target);
+  }
+}
+
+function eliminate(p) {
+  state.alive[p] = false;
+  // 탈락자의 말 제거 (땅은 그대로 유지 — 주인 불변 규칙)
+  if (state.pawnPos[p] >= 0 && state.board[state.pawnPos[p]].pawn === p) {
+    state.board[state.pawnPos[p]].pawn = -1;
+  }
+  state.pawnPos[p] = -1;
+}
+
+// ===== 턴 진행 + 승리 판정 =====
+function afterAction(actingPlayer) {
+  // 5목 체크
+  if (checkOmok(actingPlayer)) { pushState(); return; }
+  // 생존자 1명?
+  const alivePlayers = [0,1,2,3].filter(i => state.alive[i]);
+  if (alivePlayers.length === 1) {
+    state.winner = alivePlayers[0];
+    state.winReason = '최후의 생존자';
+    render();
+    pushState();
+    return;
+  }
+  // 빈 칸 소진?
+  if (emptyCount() === 0) {
+    let best = -1, bestLand = -1;
+    alivePlayers.forEach(pi => { const l = landCount(pi); if (l > bestLand) { bestLand = l; best = pi; } });
+    state.winner = best;
+    state.winReason = '빈 칸 소진 — 최다 영토';
+    render();
+    pushState();
+    return;
+  }
+  advanceTurn();
+  render();
+  pushState();
+}
+
+function advanceTurn() {
+  state.turnCount++; // 전역 턴 진행 (고정 해제 타이밍)
+  // 다음 생존 플레이어로
+  let guard = 0;
+  do {
+    state.orderPos = (state.orderPos + 1) % 4;
+    guard++;
+  } while (!state.alive[state.order[state.orderPos]] && guard < 8);
+}
+
+// 5목 판정: actingPlayer의 땅이 가로/세로/대각 5연속인지
+function checkOmok(p) {
+  const owned = (r, c) => r>=0 && r<SIZE && c>=0 && c<SIZE && state.board[idx(r,c)].owner === p;
+  const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (!owned(r,c)) continue;
+      for (const [dr,dc] of dirs) {
+        let cnt = 1;
+        while (owned(r+dr*cnt, c+dc*cnt)) cnt++;
+        if (cnt >= 5) {
+          state.winner = p;
+          state.winReason = '5목 완성';
+          render();
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function renderWin() {
+  showScreen('win');
+  const p = state.winner;
+  document.getElementById('win-content').innerHTML = `
+    <div class="win-box">
+      <div class="win-title">🏆 ${state.names[p]} 우승!</div>
+      <div class="win-sub">${state.winReason}</div>
+    </div>
+    <div style="background:#15161f;border:1px solid #23252f;border-radius:12px;padding:1rem;margin-bottom:1rem;">
+      ${[0,1,2,3].map(pi => `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;">
+        <span style="color:${COLORS[pi]};font-weight:700;">${state.names[pi]}</span>
+        <span>${state.alive[pi] ? landCount(pi)+' 땅' : '탈락'}</span>
+      </div>`).join('')}
+    </div>
+  `;
+}
+
+// ===== 설정 화면 배경: 떠다니는 영토/전투 기호 =====
+let setupBgRAF = null, setupParticles = [];
+const SETUP_SYMBOLS = ['♟','⚔','1','2','3','4','◆','▦','✦'];
+const PCOLORS_RGB = ['255,90,110','79,140,255','52,211,153','251,191,36'];
+
+function initSetupParticles(w, h) {
+  const count = Math.min(40, Math.floor(w * h / 22000));
+  setupParticles = [];
+  for (let i = 0; i < count; i++) {
+    setupParticles.push({
+      x: Math.random()*w, y: Math.random()*h,
+      sym: SETUP_SYMBOLS[Math.floor(Math.random()*SETUP_SYMBOLS.length)],
+      color: PCOLORS_RGB[Math.floor(Math.random()*4)],
+      size: 14 + Math.random()*32, speed: 0.12 + Math.random()*0.45,
+      drift: (Math.random()-0.5)*0.3, alpha: 0.05 + Math.random()*0.13,
+      rot: (Math.random()-0.5)*0.4,
+    });
+  }
+}
+
+function startSetupBg() {
+  const canvas = document.getElementById('setup-bg');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; initSetupParticles(canvas.width, canvas.height); }
+  if (!setupBgRAF) { resize(); canvas._rh = resize; window.addEventListener('resize', resize); }
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (const p of setupParticles) {
+      p.y -= p.speed; p.x += p.drift;
+      if (p.y < -50) { p.y = canvas.height+40; p.x = Math.random()*canvas.width; }
+      if (p.x < -50) p.x = canvas.width+40; if (p.x > canvas.width+50) p.x = -40;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.font = `700 ${p.size}px 'Pretendard', sans-serif`;
+      ctx.fillStyle = `rgba(${p.color}, ${p.alpha})`;
+      ctx.textAlign = 'center'; ctx.fillText(p.sym, 0, 0); ctx.restore();
+    }
+    setupBgRAF = requestAnimationFrame(draw);
+  }
+  if (!setupBgRAF) draw();
+}
+
+function stopSetupBg() {
+  if (setupBgRAF) { cancelAnimationFrame(setupBgRAF); setupBgRAF = null; }
+  const canvas = document.getElementById('setup-bg');
+  if (canvas && canvas._rh) { window.removeEventListener('resize', canvas._rh); canvas._rh = null; }
+}
+
+// 초기화
+document.getElementById('setup-bg').classList.add('show');
+startSetupBg();
+</script>
+</body>
+</html>
