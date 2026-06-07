@@ -8,7 +8,11 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0d0e14; color: #e8e6f0; min-height: 100vh; }
 
-  .wrap { max-width: 560px; margin: 0 auto; padding: 1.25rem 1rem; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 1.25rem 1rem; position: relative; z-index: 1; }
+
+  /* 설정 화면 배경 캔버스 */
+  #setup-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: none; }
+  #setup-bg.show { display: block; }
   .title { font-size: 22px; font-weight: 800; color: #f0eeff; letter-spacing: -0.5px; }
   .sub { font-size: 13px; color: #6b6880; margin-bottom: 1rem; }
 
@@ -107,6 +111,7 @@
 </style>
 </head>
 <body>
+<canvas id="setup-bg"></canvas>
 <div class="wrap">
 
   <!-- 설정 화면 -->
@@ -229,6 +234,12 @@ function emptyCount() {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
+  // 설정 화면에서만 배경 연출
+  const bg = document.getElementById('setup-bg');
+  if (bg) {
+    if (id === 'setup') { bg.classList.add('show'); startSetupBg(); }
+    else { bg.classList.remove('show'); stopSetupBg(); }
+  }
 }
 
 // ===== 설정 화면 =====
@@ -782,8 +793,58 @@ function renderWin() {
   `;
 }
 
+// ===== 설정 화면 배경: 떠다니는 영토/전투 기호 =====
+let setupBgRAF = null, setupParticles = [];
+const SETUP_SYMBOLS = ['♟','⚔','1','2','3','4','◆','▦','✦'];
+const PCOLORS_RGB = ['255,90,110','79,140,255','52,211,153','251,191,36'];
+
+function initSetupParticles(w, h) {
+  const count = Math.min(40, Math.floor(w * h / 22000));
+  setupParticles = [];
+  for (let i = 0; i < count; i++) {
+    setupParticles.push({
+      x: Math.random()*w, y: Math.random()*h,
+      sym: SETUP_SYMBOLS[Math.floor(Math.random()*SETUP_SYMBOLS.length)],
+      color: PCOLORS_RGB[Math.floor(Math.random()*4)],
+      size: 14 + Math.random()*32, speed: 0.12 + Math.random()*0.45,
+      drift: (Math.random()-0.5)*0.3, alpha: 0.05 + Math.random()*0.13,
+      rot: (Math.random()-0.5)*0.4,
+    });
+  }
+}
+
+function startSetupBg() {
+  const canvas = document.getElementById('setup-bg');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; initSetupParticles(canvas.width, canvas.height); }
+  if (!setupBgRAF) { resize(); canvas._rh = resize; window.addEventListener('resize', resize); }
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (const p of setupParticles) {
+      p.y -= p.speed; p.x += p.drift;
+      if (p.y < -50) { p.y = canvas.height+40; p.x = Math.random()*canvas.width; }
+      if (p.x < -50) p.x = canvas.width+40; if (p.x > canvas.width+50) p.x = -40;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.font = `700 ${p.size}px 'Pretendard', sans-serif`;
+      ctx.fillStyle = `rgba(${p.color}, ${p.alpha})`;
+      ctx.textAlign = 'center'; ctx.fillText(p.sym, 0, 0); ctx.restore();
+    }
+    setupBgRAF = requestAnimationFrame(draw);
+  }
+  if (!setupBgRAF) draw();
+}
+
+function stopSetupBg() {
+  if (setupBgRAF) { cancelAnimationFrame(setupBgRAF); setupBgRAF = null; }
+  const canvas = document.getElementById('setup-bg');
+  if (canvas && canvas._rh) { window.removeEventListener('resize', canvas._rh); canvas._rh = null; }
+}
+
 // 초기화
 renderSetup();
+document.getElementById('setup-bg').classList.add('show');
+startSetupBg();
 </script>
 </body>
 </html>
