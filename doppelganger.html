@@ -8,7 +8,40 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0a0a0f; color: #e6e4f0; min-height: 100vh; }
 
-  .wrap { max-width: 520px; margin: 0 auto; padding: 1.25rem 1rem; }
+  /* 로비 배경 캔버스 */
+  #lobby-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: none; }
+  #lobby-bg.show { display: block; }
+
+  .wrap { max-width: 520px; margin: 0 auto; padding: 1.25rem 1rem; position: relative; z-index: 1; }
+
+  /* 역할 공개 연출 */
+  @keyframes roleReveal { 0% { opacity: 0; transform: translateY(14px) scale(0.96); } 100% { opacity: 1; transform: none; } }
+  .role-card { animation: roleReveal 0.5s ease-out both; }
+  @keyframes glitch {
+    0%,100% { transform: translate(0); }
+    20% { transform: translate(-2px, 1px); } 40% { transform: translate(2px, -1px); }
+    60% { transform: translate(-1px, -1px); } 80% { transform: translate(1px, 1px); }
+  }
+  .role-card.doppel .role-name { animation: glitch 0.35s steps(2) 3; position: relative; }
+  .role-card.doppel { box-shadow: 0 0 30px #be123c22; }
+  @keyframes pulseRed { 0%,100% { box-shadow: 0 0 30px #be123c22; } 50% { box-shadow: 0 0 44px #be123c44; } }
+  .role-card.doppel { animation: roleReveal 0.5s ease-out both, pulseRed 2.6s ease-in-out 0.5s infinite; }
+
+  /* 종료 정체 공개 연출 */
+  @keyframes endReveal { 0% { opacity: 0; transform: scale(0.92); filter: blur(6px); } 100% { opacity: 1; transform: none; filter: none; } }
+  #end-content .role-card { animation: endReveal 0.7s ease-out both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  #end-content .card-box { animation: fadeUp 0.6s ease-out 0.5s both; }
+
+  /* 둔갑당함 메시지 미묘한 깜빡임 */
+  @keyframes flickerWarn { 0%,100% { border-color: #be123c44; } 50% { border-color: #be123c99; } }
+  .chat-msg.disguise-self { animation: flickerWarn 2s ease-in-out infinite; }
+
+  /* 감염 발생 시 화면 가장자리 붉은 비네트 (종료화면 도플승리 등) */
+  @keyframes vignettePulse { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+  .infect-vignette { position: fixed; inset: 0; z-index: 50; pointer-events: none;
+    box-shadow: inset 0 0 120px 30px #be123c66; animation: vignettePulse 1.4s ease-out forwards; }
+
   .title { font-size: 24px; font-weight: 800; letter-spacing: -0.5px;
     background: linear-gradient(120deg, #c084fc, #818cf8); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .sub { font-size: 12.5px; color: #6b6878; margin-bottom: 1.25rem; }
@@ -93,6 +126,7 @@
 </style>
 </head>
 <body>
+<canvas id="lobby-bg"></canvas>
 <div class="wrap">
 
   <!-- 로비 -->
@@ -203,8 +237,8 @@ const db = getDatabase(fbApp);
 // ===== 원본 학생 프로필 (나이는 한국 나이, 시크릿 1~10000) =====
 const STUDENT_NAMES = ['성연아', '장유현', '유소연', '배재욱'];
 const GENDERS = ['남성', '여성'];
-const AGES = [17, 18, 19];
-const GEMS = ['사파이어', '흑요석', '에메랄드', '가넷', '루비', '자수정', '토파즈', '오팔', '다이아몬드', '진주'];
+const AGES = [16, 17, 18];
+const GEMS = ['사파이어', '루비', '에메랄드', '자수정', '흑요석', '다이아몬드'];
 const ROUND_MS = 180000; // 라운드당 3분
 
 // ===== 온라인 상태 =====
@@ -225,6 +259,12 @@ function genCode() {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
+  // 로비에서만 배경 연출
+  const bg = document.getElementById('lobby-bg');
+  if (bg) {
+    if (id === 'lobby') { bg.classList.add('show'); startLobbyBg(); }
+    else { bg.classList.remove('show'); stopLobbyBg(); }
+  }
 }
 
 function lobbyMsg(t, type='error') {
@@ -367,7 +407,7 @@ function buildGame(seats) {
     gender: rand(GENDERS),
     age: rand(AGES),
     gem: rand(GEMS),
-    secret: Math.floor(Math.random()*10000) + 1, // 1~10000
+    secret: Math.floor(Math.random()*64) + 1, // 1~64
   }));
 
   // 5명 중 1명 도플갱어, 나머지 4명에 학생 배정
@@ -746,7 +786,7 @@ function renderGuess() {
       <div class="guess-field"><div class="glabel">성별</div><div class="guess-opts">${optBtns('gender', GENDERS)}</div></div>
       <div class="guess-field"><div class="glabel">나이</div><div class="guess-opts">${optBtns('age', AGES.map(a=>a+'세'), AGES)}</div></div>
       <div class="guess-field"><div class="glabel">보석</div><div class="guess-opts">${optBtns('gem', GEMS)}</div></div>
-      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', gameCache.students.map(s=>s.secret), gameCache.students.map(s=>s.secret))}</div></div>
+      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b), [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b))}</div></div>
       <button class="btn-primary" id="btn-submit-guess">추리 제출</button>
       <div id="guess-result"></div>`;
   } else {
@@ -763,7 +803,7 @@ function renderGuess() {
       <div class="guess-field"><div class="glabel">성별</div><div class="guess-opts">${optBtns('gender', GENDERS)}</div></div>
       <div class="guess-field"><div class="glabel">나이</div><div class="guess-opts">${optBtns('age', AGES.map(a=>a+'세'), AGES)}</div></div>
       <div class="guess-field"><div class="glabel">보석</div><div class="guess-opts">${optBtns('gem', GEMS)}</div></div>
-      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', gameCache.students.map(s=>s.secret), gameCache.students.map(s=>s.secret))}</div></div>
+      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b), [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b))}</div></div>
       <button class="btn-primary" id="btn-submit-guess">감염 시도</button>
       <div id="guess-result"></div>`;
   }
@@ -900,12 +940,70 @@ function renderEnd(data) {
       <h2>도플갱어의 정체와 가짜 프로필</h2>
       ${reveal}
     </div>`;
+
+  // 도플갱어 승리 시 붉은 비네트 연출 (한 번)
+  if (won === 'doppel') {
+    const v = document.createElement('div');
+    v.className = 'infect-vignette';
+    document.body.appendChild(v);
+    setTimeout(() => v.remove(), 1500);
+  }
 }
 
 document.getElementById('btn-end-leave').addEventListener('click', leaveRoom);
 
+// ===== 로비 배경: 떠다니는 가면/물음표/실루엣 =====
+let lobbyBgRAF = null, lobbyParticles = [];
+const LOBBY_SYMBOLS = ['🎭', '?', '◑', '◐', '☻', '✦', '∅'];
 
+function initLobbyParticles(w, h) {
+  const count = Math.min(34, Math.floor(w * h / 26000));
+  lobbyParticles = [];
+  for (let i = 0; i < count; i++) {
+    lobbyParticles.push({
+      x: Math.random()*w, y: Math.random()*h,
+      sym: LOBBY_SYMBOLS[Math.floor(Math.random()*LOBBY_SYMBOLS.length)],
+      size: 14 + Math.random()*30, speed: 0.1 + Math.random()*0.4,
+      drift: (Math.random()-0.5)*0.35, alpha: 0.04 + Math.random()*0.10,
+      rot: (Math.random()-0.5)*0.5, sway: Math.random()*Math.PI*2,
+    });
+  }
+}
 
+function startLobbyBg() {
+  const canvas = document.getElementById('lobby-bg');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; initLobbyParticles(canvas.width, canvas.height); }
+  if (!lobbyBgRAF) { resize(); canvas._rh = resize; window.addEventListener('resize', resize); }
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for (const p of lobbyParticles) {
+      p.y -= p.speed; p.sway += 0.01; p.x += p.drift + Math.sin(p.sway)*0.3;
+      if (p.y < -50) { p.y = canvas.height+40; p.x = Math.random()*canvas.width; }
+      if (p.x < -50) p.x = canvas.width+40; if (p.x > canvas.width+50) p.x = -40;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = p.alpha;
+      ctx.font = `${p.size}px 'Pretendard', sans-serif`;
+      ctx.fillStyle = '#c084fc';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(p.sym, 0, 0); ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    lobbyBgRAF = requestAnimationFrame(draw);
+  }
+  if (!lobbyBgRAF) draw();
+}
+
+function stopLobbyBg() {
+  if (lobbyBgRAF) { cancelAnimationFrame(lobbyBgRAF); lobbyBgRAF = null; }
+  const canvas = document.getElementById('lobby-bg');
+  if (canvas && canvas._rh) { window.removeEventListener('resize', canvas._rh); canvas._rh = null; }
+}
+
+// 초기: 로비 배경 시작
+document.getElementById('lobby-bg').classList.add('show');
+startLobbyBg();
 </script>
 </body>
 </html>
