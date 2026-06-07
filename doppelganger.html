@@ -472,14 +472,18 @@ document.getElementById('btn-role-ready').addEventListener('click', async () => 
 let chatEntered = false;
 let myRoleCache = null;       // 내 역할 정보 캐시
 let seatNames = [];           // 좌석별 표시 이름
-let lastMsgCount = 0;
 
 function enterChat(data) {
-  showScreen('game');
   const g = data.game;
   seatNames = [0,1,2,3,4].map(i => data.seats[i] || `P${i+1}`);
   myRoleCache = g.roles[mySeat];
   const amInfected = g.infected && g.infected[mySeat];
+
+  // 추리 화면에 있으면 거기 머무름 (채팅 업데이트로 튕기지 않게).
+  // 그 외(대기/역할 등)에서 처음 진입할 때만 게임 화면으로.
+  const onGuess = document.getElementById('screen-guess').classList.contains('active');
+  const onGame = document.getElementById('screen-game').classList.contains('active');
+  if (!onGuess && !onGame) showScreen('game');
 
   // 헤더
   document.getElementById('chat-round').textContent = g.round || 1;
@@ -487,24 +491,19 @@ function enterChat(data) {
   if (amInfected) roleText = '🔴 도플갱어화됨';
   document.getElementById('chat-myrole').textContent = roleText;
 
-  // 둔갑 패널: 도플갱어만, 그리고 selection 바뀔 때만 갱신(깜빡임 방지)
+  // 둔갑 패널: 도플갱어만, selection 바뀔 때만 갱신(깜빡임 방지)
   if (myRoleCache.role === 'doppel') {
     renderDoppelPanel(g);
   } else {
     document.getElementById('doppel-panel').style.display = 'none';
   }
 
-  // 감염된 학생은 추리 버튼/입력 제한 (채팅은 가능)
-  const guessBtn = document.getElementById('btn-guess');
-  if (amInfected) {
-    guessBtn.style.display = 'none';
-  } else {
-    guessBtn.style.display = 'block';
-  }
+  // 감염된 학생은 추리 버튼 숨김 (채팅은 가능)
+  document.getElementById('btn-guess').style.display = amInfected ? 'none' : 'block';
 
   renderChatLog(g.messages || {});
 
-  // 타이머 시작 (방장이 정산 책임)
+  // 타이머 (이미 같은 라운드 타이머가 돌면 재설정 안 함)
   startRoundTimer(g.roundEndsAt);
 
   chatEntered = true;
@@ -512,9 +511,13 @@ function enterChat(data) {
 
 let roundTimerInterval = null;
 let settling = false;
+let timerEndsAt = 0;
 function startRoundTimer(endsAt) {
-  if (roundTimerInterval) clearInterval(roundTimerInterval);
   if (!endsAt) { document.getElementById('chat-timer').textContent = '--:--'; return; }
+  // 이미 같은 종료시각으로 타이머가 돌고 있으면 그대로 둠 (매 채팅마다 리셋 방지)
+  if (roundTimerInterval && timerEndsAt === endsAt) return;
+  if (roundTimerInterval) clearInterval(roundTimerInterval);
+  timerEndsAt = endsAt;
   const tick = async () => {
     const remain = Math.max(0, endsAt - Date.now());
     const sec = Math.ceil(remain / 1000);
