@@ -557,7 +557,23 @@ function showGameMsg(text, type = 'info') {
 // 규칙 펼치기 토글
 // 봇과 대전 (로컬에서 내 브라우저가 봇 p2를 조종)
 let vsBot = false;
-let botActing = false; // 봇 행동 중복 실행 방지
+// 봇 행동 스케줄러: 같은 상황(sig)은 한 번만, 새 상황은 항상 예약 실행
+let botLastSig = null;
+let botTimer = null;
+function scheduleBotAction(sig, fn, delay = 900) {
+  if (botLastSig === sig) return; // 이미 이 상황 처리(예약)함
+  botLastSig = sig;
+  if (botTimer) clearTimeout(botTimer);
+  botTimer = setTimeout(async () => {
+    botTimer = null;
+    try { await fn(); }
+    catch (e) { console.error('봇 행동 오류', e); botLastSig = null; } // 실패 시 재시도 허용
+  }, delay);
+}
+function resetBotScheduler() {
+  botLastSig = null;
+  if (botTimer) { clearTimeout(botTimer); botTimer = null; }
+}
 document.getElementById('btn-bot').addEventListener('click', async () => {
   myName = document.getElementById('my-name').value.trim();
   if (!myName) { showLobbyMsg('이름을 입력하세요.'); return; }
@@ -777,27 +793,25 @@ function handleGameState(rawData) {
   if (data.phase === 'playing') {
     showScreen('game');
     renderGame(data);
-    // 봇 차례면 자동으로 둠 (사람처럼 잠깐 텀)
-    if (vsBot && data.currentTurn === 'p2' && !botActing) {
-      botActing = true;
-      setTimeout(async () => { await botPlay(); botActing = false; }, 900);
+    // 봇 차례면 자동으로 둠. 시그니처로 중복 실행만 막고, 새 상황은 항상 처리
+    if (vsBot && data.currentTurn === 'p2') {
+      scheduleBotAction('play:' + data.round + ':' + data.slotCount, async () => {
+        await botPlay();
+      });
     }
   } else if (data.phase === 'reveal') {
     stopTimer(); timerTurnKey = null;
     showScreen('reveal');
     renderReveal(data);
-    // 봇 자동 확인 (양쪽 ack 필요하므로 봇 몫 처리)
-    if (vsBot && data.revealAck && !data.revealAck.p2 && !botActing) {
-      botActing = true;
-      setTimeout(async () => {
+    // 봇 자동 확인
+    if (vsBot && data.revealAck && !data.revealAck.p2) {
+      scheduleBotAction('reveal:' + data.round, async () => {
         const snap = await get(roomRef);
-        if (snap.exists()) {
-          const cur = normalizeData(snap.val());
-          if (cur.phase === 'reveal' && cur.revealAck && !cur.revealAck.p2) {
-            await applyRevealAck(cur, 'p2');
-          }
+        if (!snap.exists()) return;
+        const cur = normalizeData(snap.val());
+        if (cur.phase === 'reveal' && cur.revealAck && !cur.revealAck.p2) {
+          await applyRevealAck(cur, 'p2');
         }
-        botActing = false;
       }, 1500);
     }
   } else if (data.phase === 'end') {
@@ -809,33 +823,27 @@ function handleGameState(rawData) {
     showScreen('roulette');
     renderRoulette(data);
     // 봇이 패자면 자동으로 방아쇠 / 결과 나오면 자동 확인
-    if (vsBot && !botActing) {
+    if (vsBot) {
       if (data.loser === 'p2' && !data.rouletteResult) {
-        botActing = true;
-        setTimeout(async () => {
+        scheduleBotAction('roulette-fire:' + data.matchNum, async () => {
           const snap = await get(roomRef);
-          if (snap.exists()) {
-            const cur = normalizeData(snap.val());
-            if (cur.phase === 'roulette' && cur.loser === 'p2' && !cur.rouletteResult) {
-              const chambers = cur.chambers || START_CHAMBERS;
-              const bullets = Math.min(BULLETS, chambers);
-              const fired = Math.floor(Math.random() * chambers) < bullets;
-              await update(roomRef, { rouletteResult: fired ? 'fired' : 'safe' });
-            }
+          if (!snap.exists()) return;
+          const cur = normalizeData(snap.val());
+          if (cur.phase === 'roulette' && cur.loser === 'p2' && !cur.rouletteResult) {
+            const chambers = cur.chambers || START_CHAMBERS;
+            const bullets = Math.min(BULLETS, chambers);
+            const fired = Math.floor(Math.random() * chambers) < bullets;
+            await update(roomRef, { rouletteResult: fired ? 'fired' : 'safe' });
           }
-          botActing = false;
         }, 1500);
       } else if (data.rouletteResult && data.rouletteAck && !data.rouletteAck.p2) {
-        botActing = true;
-        setTimeout(async () => {
+        scheduleBotAction('roulette-ack:' + data.matchNum, async () => {
           const snap = await get(roomRef);
-          if (snap.exists()) {
-            const cur = normalizeData(snap.val());
-            if (cur.rouletteResult && cur.rouletteAck && !cur.rouletteAck.p2) {
-              await advanceAfterRoulette(cur, cur.rouletteResult === 'fired', 'p2');
-            }
+          if (!snap.exists()) return;
+          const cur = normalizeData(snap.val());
+          if (cur.rouletteResult && cur.rouletteAck && !cur.rouletteAck.p2) {
+            await advanceAfterRoulette(cur, cur.rouletteResult === 'fired', 'p2');
           }
-          botActing = false;
         }, 1200);
       }
     }
@@ -1570,7 +1578,7 @@ async function resetToLobby(notifyLeave = false) {
   myRole = null; myName = ''; roomCode = ''; roomRef = null; gameListener = null;
   localSelectedCard = null; localSelectedCardIdx = null;
   isPlacing = false;
-  vsBot = false; botActing = false;
+  vsBot = false; resetBotScheduler();
   document.getElementById('my-name').value = '';
   document.getElementById('join-code').value = '';
   showScreen('lobby');
