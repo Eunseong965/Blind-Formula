@@ -203,7 +203,7 @@
 
   <!-- 대기 화면 -->
   <div class="screen" id="screen-wait">
-    <div class="title">정복 오목 <span style="font-size:11px; color:#fbbf24; font-weight:600;">v105-카드뒤집기</span></div>
+    <div class="title">정복 오목 <span style="font-size:11px; color:#fbbf24; font-weight:600;">v400-슬라이드</span></div>
     <div class="card-box" style="text-align:center;">
       <h2>방 코드</h2>
       <div id="wait-code" style="font-size:34px; font-weight:800; letter-spacing:8px; color:#4f8cff; padding:0.5rem 0;">------</div>
@@ -717,12 +717,13 @@ function onGameUpdate(data) {
 
   state = deserializeState(data.game);
 
-  // 말 이동 감지 → 경로 발자국 표시 (시각 효과, 로직 무관)
+  // 말 이동 감지 (애니메이션은 render 후에 실행해야 DOM이 준비됨)
+  const moves = [];
   if (prevPawnPos) {
     for (let pl = 0; pl < 4; pl++) {
       const before = prevPawnPos[pl], after = state.pawnPos[pl];
       if (before >= 0 && after >= 0 && before !== after) {
-        showMoveTrail(before, after, pl);
+        moves.push({ from: before, to: after, pl });
       }
     }
   }
@@ -739,6 +740,9 @@ function onGameUpdate(data) {
   }
   render();
 
+  // render로 말이 도착 칸에 그려진 뒤 미끄러짐 애니메이션 실행
+  for (const m of moves) showMoveTrail(m.from, m.to, m.pl);
+
   // 봇 자동 실행 (봇이 있을 때만)
   if (hasBots()) maybeRunBot();
 }
@@ -754,9 +758,9 @@ function showMoveTrail(from, to, player) {
 
   const destCell = document.querySelector(`.cell[data-idx="${to}"]`);
   const fromCell = document.querySelector(`.cell[data-idx="${from}"]`);
-  if (!destCell || !fromCell) return;
+  if (!destCell || !fromCell) { console.log('[슬라이드] 셀 못찾음', from, to); return; }
   const pawn = destCell.querySelector('.pawn');
-  if (!pawn) return;
+  if (!pawn) { console.log('[슬라이드] 말 못찾음 @', to); return; }
 
   // 한 칸당 픽셀 거리 = (출발칸 - 도착칸) 중심거리 / 칸수 (x,y 각각 실측)
   const ra = fromCell.getBoundingClientRect(), rb = destCell.getBoundingClientRect();
@@ -767,25 +771,32 @@ function showMoveTrail(from, to, player) {
   const unit = Math.abs(unitX) || Math.abs(unitY) || rb.width;
   // 웨이포인트별 도착 대비 오프셋(px)
   const offsets = waypoints.map(([wr, wc]) => [ (wc - tc) * unit, (wr - tr) * unit ]);
+  console.log('[슬라이드] 말'+player, from+'→'+to, '칸크기='+unit.toFixed(0)+'px', '웨이포인트수='+offsets.length, '시작오프셋='+JSON.stringify(offsets[0]));
 
+  // 1) 말을 출발 위치로 즉시 이동 (애니메이션 없이)
   pawn.style.transition = 'none';
   pawn.style.zIndex = '10';
   pawn.style.transform = `translate(${offsets[0][0]}px, ${offsets[0][1]}px)`;
-  void pawn.offsetWidth; // 시작 위치 강제 적용
+
   const STEP_MS = 180;
-  offsets.forEach((off, k) => {
-    if (k === 0) return;
-    setTimeout(() => {
-      pawn.style.transition = `transform ${STEP_MS}ms linear`;
-      pawn.style.transform = `translate(${off[0]}px, ${off[1]}px)`;
-    }, (k - 1) * STEP_MS);
+  // 2) 다음 프레임에 시작 → 웨이포인트를 순차적으로 미끄러짐
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      offsets.forEach((off, k) => {
+        if (k === 0) return;
+        setTimeout(() => {
+          pawn.style.transition = `transform ${STEP_MS}ms linear`;
+          pawn.style.transform = `translate(${off[0]}px, ${off[1]}px)`;
+        }, (k - 1) * STEP_MS);
+      });
+    });
   });
   const total = (offsets.length - 1) * STEP_MS;
   setTimeout(() => {
     pawn.style.transition = '';
     pawn.style.transform = '';
     pawn.style.zIndex = '';
-  }, total + 60);
+  }, total + 100);
 }
 
 // 봇 조종자 판정: 봇이 아니고 접속 중인 좌석 중 가장 빠른 좌석이 모든 봇을 조종
