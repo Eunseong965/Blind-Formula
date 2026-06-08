@@ -561,7 +561,8 @@ function renderWait(data) {
   const beginBtn = document.getElementById('btn-begin');
   const beginBotBtn = document.getElementById('btn-begin-bot');
   const hint = document.getElementById('wait-hint');
-  const amHost = mySeat === data.host;
+  // 방장 판정: 타입 안전하게 (Firebase가 숫자/문자 섞을 수 있음) + 좌석0 fallback
+  const amHost = (Number(data.host) === Number(mySeat)) || (mySeat === 0 && (data.host === undefined || data.host === null));
   if (amHost && count === 4) {
     beginBtn.style.display = 'block';
     beginBotBtn.style.display = 'none';
