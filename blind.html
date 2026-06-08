@@ -266,6 +266,7 @@
     <input type="text" id="my-name" placeholder="닉네임 입력" maxlength="10">
   </div>
   <button class="btn-primary" id="btn-create" style="margin-bottom: 10px;">방 만들기 (선공)</button>
+  <button class="btn-ghost" id="btn-bot" style="margin-bottom: 10px; width:100%;">🤖 봇과 대전 (고수)</button>
   <div style="text-align:center; font-size:12px; color:#4a4760; margin-bottom: 10px;">또는</div>
   <div class="card">
     <h2>방 코드로 참가</h2>
@@ -554,6 +555,44 @@ function showGameMsg(text, type = 'info') {
 }
 
 // 규칙 펼치기 토글
+// 봇과 대전 (로컬에서 내 브라우저가 봇 p2를 조종)
+let vsBot = false;
+let botActing = false; // 봇 행동 중복 실행 방지
+document.getElementById('btn-bot').addEventListener('click', async () => {
+  myName = document.getElementById('my-name').value.trim();
+  if (!myName) { showLobbyMsg('이름을 입력하세요.'); return; }
+  myRole = 'p1';
+  vsBot = true;
+  roomCode = generateCode();
+  roomRef = ref(db, 'rooms/' + roomCode);
+
+  const initialState = {
+    p1Name: myName, p2Name: '🤖 봇',
+    phase: 'playing',          // 봇이 이미 있으니 바로 시작
+    round: 1, matchNum: 1,
+    chambers: START_CHAMBERS,
+    rouletteResult: '',
+    rouletteAck: { p1: false, p2: false },
+    currentTurn: 'p1',
+    roundOwner: 'p1',
+    slots: ['', '', '', '', ''],
+    slotOwner: ['', '', '', '', ''],
+    slotCount: 0,
+    p1Used: [false,false,false,false,false,false,false,false,false,false],
+    p2Used: [false,false,false,false,false,false,false,false,false,false],
+    scores: { p1: [0,0,0,0], p2: [0,0,0,0] },
+    history: [],
+    revealAck: { p1: false, p2: false },
+    presence: { p1: true, p2: true },  // 봇은 항상 접속
+    leftBy: '',
+    isBot: true,
+  };
+  await set(roomRef, initialState);
+  setupPresence();
+  showScreen('game');
+  startGameListener();
+});
+
 // 방 만들기
 document.getElementById('btn-create').addEventListener('click', async () => {
   myName = document.getElementById('my-name').value.trim();
@@ -704,8 +743,8 @@ function handleGameState(rawData) {
   }
   const data = normalizeData(rawData);
 
-  // 상대 이탈 감지 (게임이 끝나지 않았을 때만)
-  if (data.phase !== 'end' && data.phase !== 'roulette' && data.phase !== 'dead') {
+  // 상대 이탈 감지 (게임이 끝나지 않았을 때만, 봇전 제외)
+  if (!vsBot && data.phase !== 'end' && data.phase !== 'roulette' && data.phase !== 'dead') {
     const oppRole = myRole === 'p1' ? 'p2' : 'p1';
     const presence = data.presence || {};
     const oppPresent = presence[oppRole];
@@ -738,10 +777,29 @@ function handleGameState(rawData) {
   if (data.phase === 'playing') {
     showScreen('game');
     renderGame(data);
+    // 봇 차례면 자동으로 둠 (사람처럼 잠깐 텀)
+    if (vsBot && data.currentTurn === 'p2' && !botActing) {
+      botActing = true;
+      setTimeout(async () => { await botPlay(); botActing = false; }, 900);
+    }
   } else if (data.phase === 'reveal') {
     stopTimer(); timerTurnKey = null;
     showScreen('reveal');
     renderReveal(data);
+    // 봇 자동 확인 (양쪽 ack 필요하므로 봇 몫 처리)
+    if (vsBot && data.revealAck && !data.revealAck.p2 && !botActing) {
+      botActing = true;
+      setTimeout(async () => {
+        const snap = await get(roomRef);
+        if (snap.exists()) {
+          const cur = normalizeData(snap.val());
+          if (cur.phase === 'reveal' && cur.revealAck && !cur.revealAck.p2) {
+            await update(roomRef, { revealAck: { ...cur.revealAck, p2: true } });
+          }
+        }
+        botActing = false;
+      }, 1500);
+    }
   } else if (data.phase === 'end') {
     stopTimer(); timerTurnKey = null;
     showScreen('end');
@@ -750,6 +808,37 @@ function handleGameState(rawData) {
     stopTimer(); timerTurnKey = null;
     showScreen('roulette');
     renderRoulette(data);
+    // 봇이 패자면 자동으로 방아쇠 / 결과 나오면 자동 확인
+    if (vsBot && !botActing) {
+      if (data.loser === 'p2' && !data.rouletteResult) {
+        botActing = true;
+        setTimeout(async () => {
+          const snap = await get(roomRef);
+          if (snap.exists()) {
+            const cur = normalizeData(snap.val());
+            if (cur.phase === 'roulette' && cur.loser === 'p2' && !cur.rouletteResult) {
+              const chambers = cur.chambers || START_CHAMBERS;
+              const bullets = Math.min(BULLETS, chambers);
+              const fired = Math.floor(Math.random() * chambers) < bullets;
+              await update(roomRef, { rouletteResult: fired ? 'fired' : 'safe' });
+            }
+          }
+          botActing = false;
+        }, 1500);
+      } else if (data.rouletteResult && data.rouletteAck && !data.rouletteAck.p2) {
+        botActing = true;
+        setTimeout(async () => {
+          const snap = await get(roomRef);
+          if (snap.exists()) {
+            const cur = normalizeData(snap.val());
+            if (cur.rouletteResult && cur.rouletteAck && !cur.rouletteAck.p2) {
+              await update(roomRef, { rouletteAck: { ...cur.rouletteAck, p2: true } });
+            }
+          }
+          botActing = false;
+        }, 1200);
+      }
+    }
   } else if (data.phase === 'dead') {
     stopTimer(); timerTurnKey = null;
     showScreen('dead');
@@ -980,6 +1069,91 @@ function renderGame(data) {
 
   // 히스토리
   renderHistory('g-history', data.history);
+}
+
+// ===== 봇 두뇌 (고수): 현재 보드에서 최선의 수 계산 =====
+// maximize=true면 점수 최대화(봇 라운드), false면 최소화(상대 라운드 방해)
+function botChooseMove(slots, p2Used, maximize) {
+  const emptySlots = [];
+  for (let i = 0; i < 5; i++) if (isEmpty(slots[i])) emptySlots.push(i);
+  if (emptySlots.length === 0) return null;
+
+  let best = null, bestVal = maximize ? -Infinity : Infinity;
+  for (let ci = 0; ci < CARDS.length; ci++) {
+    if (p2Used[ci]) continue;
+    const card = CARDS[ci];
+    for (const si of emptySlots) {
+      const wantNum = slotType(si) === 'num';
+      if (wantNum && !isNum(card)) continue;
+      if (!wantNum && !isOp(card)) continue;
+      const trial = slots.slice();
+      trial[si] = card;
+      const val = botEstimate(trial);
+      if (maximize ? val > bestVal : val < bestVal) {
+        bestVal = val; best = { cardIdx: ci, slot: si, card };
+      }
+    }
+  }
+  return best;
+}
+
+// 남은 빈칸을 대표 표본으로 채워 평균 결과 추정 (상대 카드 모름)
+function botEstimate(slots) {
+  const empties = [];
+  for (let i = 0; i < 5; i++) if (isEmpty(slots[i])) empties.push(i);
+  if (empties.length === 0) { const r = evalFormula(slots); return r === null ? 0 : r; }
+  const numSamples = [-2, -1, 1, 2], opSamples = ['+', '-', '*', '/'];
+  let sum = 0, cnt = 0;
+  function fill(idx, cur) {
+    if (idx === empties.length) { const r = evalFormula(cur); sum += (r === null ? 0 : r); cnt++; return; }
+    const si = empties[idx];
+    const samples = slotType(si) === 'num' ? numSamples : opSamples;
+    for (const s of samples) { const nx = cur.slice(); nx[si] = s; fill(idx + 1, nx); }
+  }
+  fill(0, slots.slice());
+  return cnt ? sum / cnt : 0;
+}
+
+// 봇이 한 수 두기 (p2로서 Firebase에 기록)
+async function botPlay() {
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = normalizeData(snap.val());
+  if (data.phase !== 'playing' || data.currentTurn !== 'p2') return;
+
+  // 이 라운드 주인이 봇(p2)이면 최대화, 아니면 방해(최소화)
+  const maximize = (data.roundOwner === 'p2');
+  const move = botChooseMove(data.slots, data.p2Used, maximize);
+  if (!move) return;
+
+  const newSlots = data.slots.map(v => isEmpty(v) ? EMPTY : v);
+  const newSlotOwner = data.slotOwner.map(v => isEmpty(v) ? EMPTY : v);
+  newSlots[move.slot] = move.card;
+  newSlotOwner[move.slot] = 'p2';
+  const newUsed = [...data.p2Used];
+  newUsed[move.cardIdx] = true;
+  const newCount = data.slotCount + 1;
+
+  const updateData = {
+    slots: newSlots, slotOwner: newSlotOwner, slotCount: newCount,
+    currentTurn: 'p1', p2Used: newUsed,
+  };
+
+  if (newCount === 5) {
+    const result = evalFormula(newSlots);
+    const score = result === null ? 0 : result;
+    const rIdx = data.round - 1;
+    const owner = data.roundOwner;
+    const newScores = JSON.parse(JSON.stringify(data.scores));
+    newScores[owner][rIdx] = score;
+    const ownerName = owner === 'p1' ? data.p1Name : data.p2Name;
+    const newHistory = [...(data.history || []), { round: data.round, formula: `결과값 = ${score}`, score, owner, ownerName }];
+    updateData.scores = newScores;
+    updateData.history = newHistory;
+    updateData.phase = 'reveal';
+    updateData.revealAck = { p1: false, p2: false };
+  }
+  await update(roomRef, updateData);
 }
 
 async function placeCard(slotIdx) {
@@ -1379,13 +1553,17 @@ async function resetToLobby(notifyLeave = false) {
   if (gameListener && roomRef) off(roomRef, 'value', gameListener);
 
   // 방장(p1)이 나가면 일정 시간 후 방 정리 (상대가 알림을 받을 시간 확보)
-  if (leavingRole === 'p1' && leavingRef) {
+  // 봇전은 즉시 방 삭제 (상대가 없으니)
+  if (vsBot && leavingRef) {
+    try { remove(leavingRef); } catch(e) {}
+  } else if (leavingRole === 'p1' && leavingRef) {
     setTimeout(() => { try { remove(leavingRef); } catch(e) {} }, 5000);
   }
 
   myRole = null; myName = ''; roomCode = ''; roomRef = null; gameListener = null;
   localSelectedCard = null; localSelectedCardIdx = null;
   isPlacing = false;
+  vsBot = false; botActing = false;
   document.getElementById('my-name').value = '';
   document.getElementById('join-code').value = '';
   showScreen('lobby');
