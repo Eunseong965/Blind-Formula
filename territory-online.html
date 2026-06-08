@@ -79,6 +79,29 @@
   .pawn-3 { background: #fbbf24; color:#3a2e0c; }
   .pawn.selected { outline: 3px solid #fff; outline-offset: 1px; }
 
+  /* 말 놓기/이동 연출 */
+  @keyframes pawnPlacePop {
+    0% { transform: scale(0.15); opacity: 0; filter: brightness(1.9); }
+    58% { transform: scale(1.22); opacity: 1; filter: brightness(1.45); }
+    100% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  }
+  @keyframes pawnArrivePulse {
+    0% { transform: scale(1.18); filter: brightness(1.55); box-shadow: 0 0 0 0 currentColor, 0 2px 6px #0008; }
+    100% { transform: scale(1); filter: brightness(1); box-shadow: 0 2px 6px #0008; }
+  }
+  @keyframes cellLandingRing {
+    0% { box-shadow: inset 0 0 0 0 #ffffff00, 0 0 0 0 #ffffff55; }
+    55% { box-shadow: inset 0 0 0 2px #ffffff55, 0 0 16px 2px #ffffff33; }
+    100% { box-shadow: inset 0 0 0 0 #ffffff00, 0 0 0 0 #ffffff00; }
+  }
+  .pawn.place-pop { animation: pawnPlacePop 0.32s cubic-bezier(.2,1.25,.35,1) both; }
+  .pawn.arrive-pulse { animation: pawnArrivePulse 0.26s ease-out both; }
+  .cell.land-pulse::after {
+    content: ''; position: absolute; inset: 7%; border-radius: 7px; pointer-events: none;
+    animation: cellLandingRing 0.42s ease-out both; z-index: 1;
+  }
+  .pawn.sliding { pointer-events: none; will-change: transform; box-shadow: 0 0 18px #ffffff44, 0 2px 8px #000a; }
+
   .players-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin: 12px 0; }
   .pstat { background: #15161f; border: 1px solid #23252f; border-radius: 9px; padding: 7px 4px; text-align: center; }
   .pstat.out { opacity: 0.35; }
@@ -713,8 +736,11 @@ function onGameUpdate(data) {
   // 내가 그리던 경로는 보존 (내 턴이고 아직 확정 안 했으면)
   const prevSelected = state ? state.selected : null;
   const prevPath = state ? state.path : [];
+  const prevState = state;
+  const nextState = deserializeState(data.game);
 
-  state = deserializeState(data.game);
+  queueBoardAnimations(prevState, nextState);
+  state = nextState;
 
   // 내 턴이고 모드(steal/retreat)가 아니면 그리던 경로 복원
   const myTurn = (currentPlayer() === mySeat);
@@ -732,9 +758,25 @@ function onGameUpdate(data) {
   if (hasBots()) maybeRunBot();
 }
 
+
+// 서버에서 새 상태가 들어왔을 때, 말 배치/이동 변화를 감지해 원격 화면에도 연출을 예약
+function queueBoardAnimations(prev, next) {
+  if (!prev || !next || !prev.pawnPos || !next.pawnPos) return;
+  for (let p = 0; p < 4; p++) {
+    const oldPos = prev.pawnPos[p] ?? -1;
+    const newPos = next.pawnPos[p] ?? -1;
+    if (oldPos === -1 && newPos >= 0) {
+      pendingPlaceCells.add(newPos);
+    } else if (oldPos >= 0 && newPos >= 0 && oldPos !== newPos) {
+      // 로컬에서 이미 예약한 이동이 있으면 덮지 않음. 없을 때만 원격 이동을 예약.
+      if (!pendingSlide) pendingSlide = { from: oldPos, to: newPos, player: p };
+      pendingArriveCells.add(newPos);
+    }
+  }
+}
+
 // 말 이동: 도착 칸의 말을 출발 위치에서 시작해 경로(꺾임 포함)를 따라 스르륵 미끄러뜨림
 function showMoveTrail(from, to, player) {
-  console.log('[슬라이드 호출됨]', from, '→', to, '말', player);
   const [fr, fc] = rc(from), [tr, tc] = rc(to);
   // 경로 웨이포인트: 출발 → (가로로) → (세로로) → 도착. 실제 이동대로 ㄱ자.
   const waypoints = [[fr, fc]];
@@ -744,9 +786,10 @@ function showMoveTrail(from, to, player) {
 
   const destCell = document.querySelector(`.cell[data-idx="${to}"]`);
   const fromCell = document.querySelector(`.cell[data-idx="${from}"]`);
-  if (!destCell || !fromCell) { console.log('[슬라이드] 셀 못찾음', from, to); return; }
+  if (!destCell || !fromCell) { return; }
   const pawn = destCell.querySelector('.pawn');
-  if (!pawn) { console.log('[슬라이드] 말 못찾음 @', to); return; }
+  if (!pawn) { return; }
+  pawn.classList.add('sliding');
 
   // 한 칸당 픽셀 거리 = (출발칸 - 도착칸) 중심거리 / 칸수 (x,y 각각 실측)
   const ra = fromCell.getBoundingClientRect(), rb = destCell.getBoundingClientRect();
@@ -757,7 +800,6 @@ function showMoveTrail(from, to, player) {
   const unit = Math.abs(unitX) || Math.abs(unitY) || rb.width;
   // 웨이포인트별 도착 대비 오프셋(px)
   const offsets = waypoints.map(([wr, wc]) => [ (wc - tc) * unit, (wr - tr) * unit ]);
-  console.log('[슬라이드] 말'+player, from+'→'+to, '칸크기='+unit.toFixed(0)+'px', '웨이포인트수='+offsets.length, '시작오프셋='+JSON.stringify(offsets[0]));
 
   // 1) 말을 출발 위치로 즉시 이동 (애니메이션 없이)
   pawn.style.transition = 'none';
@@ -782,6 +824,13 @@ function showMoveTrail(from, to, player) {
     pawn.style.transition = '';
     pawn.style.transform = '';
     pawn.style.zIndex = '';
+    pawn.classList.remove('sliding');
+    pawn.classList.add('arrive-pulse');
+    destCell.classList.add('land-pulse');
+    setTimeout(() => {
+      pawn.classList.remove('arrive-pulse');
+      destCell.classList.remove('land-pulse');
+    }, 460);
   }, total + 100);
 }
 
@@ -939,6 +988,7 @@ function botDoPlace(p) {
   state.board[best].owner = p;
   state.board[best].pawn = p;
   state.pawnPos[p] = best;
+  pendingPlaceCells.add(best);
   state.placedCount++;
   if (state.placedCount === 4) {
     state.phase = 'play';
@@ -1060,6 +1110,14 @@ function render() {
       pawn.className = 'pawn pawn-' + cell.pawn;
       pawn.textContent = cell.pawn + 1;
       if (state.selected === i) pawn.classList.add('selected');
+      if (pendingPlaceCells.has(i)) {
+        pawn.classList.add('place-pop');
+        div.classList.add('land-pulse');
+      }
+      if (pendingArriveCells.has(i) && !pendingSlide) {
+        pawn.classList.add('arrive-pulse');
+        div.classList.add('land-pulse');
+      }
       div.appendChild(pawn);
     }
     div.addEventListener('click', () => onCellClick(i));
@@ -1087,6 +1145,13 @@ function render() {
     const s = pendingSlide;
     pendingSlide = null;
     showMoveTrail(s.from, s.to, s.player);
+  }
+
+  if (pendingPlaceCells.size) {
+    setTimeout(() => pendingPlaceCells.clear(), 380);
+  }
+  if (pendingArriveCells.size) {
+    setTimeout(() => pendingArriveCells.clear(), 480);
   }
 }
 
@@ -1121,6 +1186,7 @@ function onCellClick(i) {
       cell.owner = p;
       cell.pawn = p;
       state.pawnPos[p] = i;
+      pendingPlaceCells.add(i);
       state.placedCount++;
       if (state.placedCount === 4) {
         state.phase = 'play';
@@ -1232,10 +1298,15 @@ function moveePawnTo(p, target) {
   if (cell.owner === -1) cell.owner = p; // 빈 땅만 점령, 이미 주인 있으면 불변
   state.pawnPos[p] = target;
   // 애니메이션 예약: 다음 render 후 이 이동을 미끄러뜨림
-  if (old >= 0 && old !== target) pendingSlide = { from: old, to: target, player: p };
+  if (old >= 0 && old !== target) {
+    pendingSlide = { from: old, to: target, player: p };
+    pendingArriveCells.add(target);
+  }
   return true;
 }
 let pendingSlide = null; // 방금 일어난 이동 (render 후 애니메이션용)
+let pendingPlaceCells = new Set(); // 방금 배치된 말 칸
+let pendingArriveCells = new Set(); // 방금 도착한 말 칸
 
 // ===== 전투 (온라인: state.battle로 동기화) =====
 // battle = { attacker, defender, target, attackerFrom, chain, deck, atkSlot, defSlot, atkCard, defCard }
