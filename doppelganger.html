@@ -53,12 +53,35 @@
   .infect-overlay .big .t2 { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 0 20px #be123c; }
   .infect-overlay .big .t3 { font-size: 13px; color: #fda4af; margin-top: 14px; line-height: 1.6; }
 
+  /* 종료 승패 연출 */
+  @keyframes resultBannerIn { 0%{opacity:0;transform:scale(0.7);filter:blur(8px);} 60%{transform:scale(1.05);} 100%{opacity:1;transform:scale(1);filter:none;} }
+  #end-content .role-label { animation: resultBannerIn 0.7s ease-out both; }
+  /* 컨페티 (승리 시) */
+  .confetti { position: fixed; top: -20px; z-index: 75; pointer-events: none; width: 9px; height: 9px; opacity: 0; }
+  @keyframes confettiFall { 0%{opacity:1;transform:translateY(0) rotate(0);} 100%{opacity:0;transform:translateY(105vh) rotate(720deg);} }
+  /* 패배 시 어둠이 가라앉는 연출 */
+  @keyframes loseSink { 0%{opacity:0;} 40%{opacity:1;} 100%{opacity:0.85;} }
+  .lose-veil { position: fixed; inset: 0; z-index: 45; pointer-events: none; background: linear-gradient(to bottom, transparent, #000000aa); animation: loseSink 1.5s ease-out forwards; }
+
+  /* 타이머 임박 긴박 연출 */
+  @keyframes timerBlink { 0%,100%{color:#fb7185;transform:scale(1);} 50%{color:#ff3b5c;transform:scale(1.18);} }
+  #chat-timer.timer-urgent { animation: timerBlink 0.8s ease-in-out infinite; font-weight:800; display:inline-block; }
+
   .title { font-size: 24px; font-weight: 800; letter-spacing: -0.5px;
     background: linear-gradient(120deg, #c084fc, #818cf8); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .sub { font-size: 12.5px; color: #6b6878; margin-bottom: 1.25rem; }
 
   .screen { display: none; }
-  .screen.active { display: block; }
+  .screen.active { display: block; animation: screenIn 0.4s ease-out; }
+
+  /* ===== 공통 모션 (통일 디자인) ===== */
+  @keyframes screenIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .card-box { animation: cardIn 0.45s ease-out both; }
+  button { transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease; }
+  button:not(:disabled):hover { transform: translateY(-2px); }
+  button:not(:disabled):active { transform: translateY(0) scale(0.97); }
+
 
   button { border: none; border-radius: 10px; padding: 11px 18px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.12s; }
   .btn-primary { background: #7c3aed; color: white; width: 100%; }
@@ -687,8 +710,16 @@ function startRoundTimer(endsAt) {
     const remain = Math.max(0, endsAt - Date.now());
     const sec = Math.ceil(remain / 1000);
     const m = Math.floor(sec / 60), s = sec % 60;
-    document.getElementById('chat-timer').textContent = `${m}:${String(s).padStart(2,'0')}`;
+    const timerEl = document.getElementById('chat-timer');
+    timerEl.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    // 10초 이하 긴박 연출
+    if (sec <= 10 && sec > 0) {
+      timerEl.classList.add('timer-urgent');
+    } else {
+      timerEl.classList.remove('timer-urgent');
+    }
     if (remain <= 0) {
+      timerEl.classList.remove('timer-urgent');
       clearInterval(roundTimerInterval); roundTimerInterval = null;
       // 정산 담당(접속자 중 가장 빠른 좌석)만 실행 — 방장 나가도 승계됨
       if (amSettleHost() && !settling) { settling = true; await settleRound(); settling = false; }
@@ -1201,12 +1232,37 @@ function renderEnd(data) {
       ${reveal}
     </div>`;
 
-  // 도플갱어 승리 시 붉은 비네트 연출 (한 번)
+  // 승패 연출
+  if (iWon) {
+    launchConfetti();
+  } else {
+    const veil = document.createElement('div');
+    veil.className = 'lose-veil';
+    document.body.appendChild(veil);
+    setTimeout(() => veil.remove(), 1600);
+  }
+  // 도플갱어 승리 시 붉은 비네트 (진영 무관, 분위기)
   if (won === 'doppel') {
     const v = document.createElement('div');
     v.className = 'infect-vignette';
     document.body.appendChild(v);
     setTimeout(() => v.remove(), 1500);
+  }
+}
+
+// 승리 컨페티 연출
+function launchConfetti() {
+  const colors = ['#818cf8', '#fb7185', '#34d399', '#fbbf24', '#c084fc', '#fff'];
+  for (let i = 0; i < 40; i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.background = colors[Math.floor(Math.random() * colors.length)];
+    c.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+    const dur = 1.8 + Math.random() * 1.4;
+    c.style.animation = `confettiFall ${dur}s linear ${Math.random()*0.6}s forwards`;
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), (dur + 0.8) * 1000);
   }
 }
 

@@ -17,7 +17,16 @@
   .sub { font-size: 13px; color: #6b6880; margin-bottom: 1rem; }
 
   .screen { display: none; }
-  .screen.active { display: block; }
+  .screen.active { display: block; animation: screenIn 0.4s ease-out; }
+
+  /* ===== 공통 모션 (통일 디자인) ===== */
+  @keyframes screenIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .card-box { animation: cardIn 0.45s ease-out both; }
+  button { transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease; }
+  button:not(:disabled):hover { transform: translateY(-2px); }
+  button:not(:disabled):active { transform: translateY(0) scale(0.97); }
+
 
   button { border: none; border-radius: 10px; padding: 11px 18px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.12s; }
   .btn-primary { background: #4f8cff; color: white; width: 100%; }
@@ -101,9 +110,23 @@
   }
   .pcard:hover { transform: translateY(-4px); border-color: #4f8cff; }
   .pcard.revealed { cursor: default; }
+  /* 전투 결과 공개 연출 */
+  @keyframes cardFlip { 0%{transform:rotateY(90deg) scale(0.8);opacity:0;} 100%{transform:rotateY(0) scale(1);opacity:1;} }
+  .pcard.reveal-anim { animation: cardFlip 0.45s ease-out both; }
+  .pcard.reveal-anim.delay { animation-delay: 0.2s; }
+  @keyframes winnerPop { 0%{transform:scale(1);} 40%{transform:scale(1.25);} 100%{transform:scale(1.12);} }
+  .pcard.battle-winner { animation: winnerPop 0.5s ease-out 0.5s both; box-shadow: 0 0 20px currentColor; }
+  .pcard.battle-loser { animation: none; opacity: 0.4; filter: grayscale(0.6); transition: opacity 0.4s 0.5s, filter 0.4s 0.5s; }
+  @keyframes clashShake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 75%{transform:translateX(5px);} }
+  .battle-vs-clash { animation: clashShake 0.3s ease-out 0.4s; }
+  @keyframes resultReveal { 0%{opacity:0;transform:translateY(8px) scale(0.9);} 100%{opacity:1;transform:none;} }
+  .battle-result.show-result { animation: resultReveal 0.4s ease-out 0.7s both; }
   .battle-result { font-size: 16px; font-weight: 800; margin-top: 1rem; min-height: 24px; }
 
   .win-box { background: #0e3326; border: 1px solid #34d39955; border-radius: 16px; padding: 2rem; text-align: center; margin-bottom: 1rem; }
+  /* 5목 완성 칸 반짝임 */
+  @keyframes winFlash { 0%{box-shadow:inset 0 0 0 0 var(--win-color);transform:scale(1);} 40%{box-shadow:inset 0 0 12px 3px var(--win-color);transform:scale(1.12);} 100%{box-shadow:inset 0 0 6px 1px var(--win-color);transform:scale(1);} }
+  .cell.win-flash { animation: winFlash 0.6s ease-out forwards; z-index: 5; --win-color: #fff; }
   .win-title { font-size: 24px; font-weight: 800; color: #34d399; margin-bottom: 6px; }
   .win-sub { font-size: 13px; color: #6b9a85; }
 
@@ -681,6 +704,7 @@ function render() {
     const cell = state.board[i];
     const div = document.createElement('div');
     div.className = 'cell';
+    div.setAttribute('data-idx', i);
     if (cell.owner === -1) div.classList.add('empty');
     else div.classList.add('land-' + cell.owner);
     if (nextCells.includes(i)) div.classList.add('movable');
@@ -903,6 +927,7 @@ function renderBattle() {
   const resultEl = document.getElementById('battle-result');
   const contBtn = document.getElementById('battle-continue');
   contBtn.style.display = 'none';
+  resultEl.className = 'battle-result';
   resultEl.textContent = '';
 
   const bothDone = b.atkCard > 0 && b.defCard > 0;
@@ -934,15 +959,18 @@ function renderBattle() {
       <div style="font-size:12px;color:#8b88a0;margin-top:8px;">${state.names[waitingFor]}이(가) 카드를 고르는 중...</div>`;
     }
   } else {
-    // 양쪽 다 뽑음 — 결과 공개
-    area.innerHTML = `<div class="card-pick">
-      <div class="pcard revealed" style="border-color:${COLORS[b.attacker]};color:${COLORS[b.attacker]}">${b.atkCard}</div>
-      <div style="display:flex;align-items:center;font-weight:800;color:#6b6880;">vs</div>
-      <div class="pcard revealed" style="border-color:${COLORS[b.defender]};color:${COLORS[b.defender]}">${b.defCard}</div>
-    </div>`;
+    // 양쪽 다 뽑음 — 결과 공개 (연출)
     const atkWins = b.atkCard > b.defCard;
     const winner = atkWins ? b.attacker : b.defender;
-    resultEl.innerHTML = `<span style="color:${COLORS[winner]}">${state.names[winner]} 승리!</span>`;
+    const atkCls = atkWins ? 'battle-winner' : 'battle-loser';
+    const defCls = atkWins ? 'battle-loser' : 'battle-winner';
+    area.innerHTML = `<div class="card-pick">
+      <div class="pcard revealed reveal-anim ${atkCls}" style="border-color:${COLORS[b.attacker]};color:${COLORS[b.attacker]}">${b.atkCard}</div>
+      <div class="battle-vs-clash" style="display:flex;align-items:center;font-weight:800;color:#6b6880;">vs</div>
+      <div class="pcard revealed reveal-anim delay ${defCls}" style="border-color:${COLORS[b.defender]};color:${COLORS[b.defender]}">${b.defCard}</div>
+    </div>`;
+    resultEl.className = 'battle-result show-result';
+    resultEl.innerHTML = `<span style="color:${COLORS[winner]}">⚔ ${state.names[winner]} 승리!</span>`;
     // 승자만 "계속" 버튼으로 다음 단계 진행 (한 명만 진행해야 중복 안 됨)
     if (mySeat === winner) {
       contBtn.style.display = 'block';
@@ -1166,15 +1194,33 @@ function checkOmok(p) {
         let cnt = 1;
         while (owned(r+dr*cnt, c+dc*cnt)) cnt++;
         if (cnt >= 5) {
+          // 5목을 이룬 칸들 기록 (연출용)
+          const cells = [];
+          for (let k = 0; k < cnt; k++) cells.push(idx(r+dr*k, c+dc*k));
+          state.winLine = cells;
           state.winner = p;
           state.winReason = '5목 완성';
           render();
+          flashWinLine(cells, p); // 5목 반짝 연출
           return true;
         }
       }
     }
   }
   return false;
+}
+
+// 5목 완성 연출: 해당 칸들이 순차로 반짝이며 빛남
+function flashWinLine(cells, p) {
+  cells.forEach((ci, k) => {
+    const el = document.querySelector(`.cell[data-idx="${ci}"]`);
+    if (el) {
+      setTimeout(() => {
+        el.classList.add('win-flash');
+        el.style.setProperty('--win-color', COLORS[p]);
+      }, k * 120);
+    }
+  });
 }
 
 function renderWin() {

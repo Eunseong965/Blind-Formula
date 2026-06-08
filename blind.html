@@ -18,7 +18,16 @@
   body { font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #0f0f13; color: #e8e6f0; min-height: 100vh; }
 
   .screen { display: none; min-height: 100vh; padding: 2rem 1rem; max-width: 480px; margin: 0 auto; }
-  .screen.active { display: flex; flex-direction: column; }
+  .screen.active { display: flex; flex-direction: column; animation: screenIn 0.4s ease-out; }
+
+  /* ===== 공통 모션 (통일 디자인) ===== */
+  @keyframes screenIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .card-box, .rules-box { animation: cardIn 0.45s ease-out both; }
+  /* 버튼 공통 인터랙션 */
+  button { transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, opacity 0.2s ease; }
+  button:not(:disabled):hover { transform: translateY(-2px); }
+  button:not(:disabled):active { transform: translateY(0) scale(0.97); }
 
   /* 로비 배경: 떠다니는 숫자 캔버스 */
   #lobby-bg {
@@ -89,6 +98,11 @@
   .slot.op { background: #14111f; }
   .slot.filled-mine { border-style: solid; border-width: 2px; border-color: #a78bfa; background: #3a2f6e; color: #ffffff; box-shadow: 0 0 0 1px #a78bfa44; }
   .slot.filled-blind { border-style: solid; border-width: 2px; border-color: #5a4a8a; background: #2a2348; color: #8b7fc0; }
+  /* 카드 놓는 손맛 */
+  @keyframes cardSlam { 0%{transform:translateY(-22px) scale(1.3) rotate(-6deg);opacity:0;} 60%{transform:translateY(3px) scale(0.95);opacity:1;} 100%{transform:translateY(0) scale(1) rotate(0);} }
+  .slot.just-placed { animation: cardSlam 0.35s cubic-bezier(.3,1.4,.5,1) both; }
+  @keyframes slotPulse { 0%{box-shadow:0 0 0 0 #a78bfaaa;} 100%{box-shadow:0 0 0 10px #a78bfa00;} }
+  .slot.just-placed.filled-mine { animation: cardSlam 0.35s cubic-bezier(.3,1.4,.5,1) both, slotPulse 0.6s ease-out 0.35s; }
   .slot.active-target { border-color: #34d399; border-style: solid; border-width: 2px; background: #14211c; box-shadow: 0 0 0 3px #34d39944; }
   .slot.empty-hint { color: #56527a; font-size: 15px; }
 
@@ -175,11 +189,25 @@
   /* 러시안 룰렛 */
   .revolver-area { text-align: center; margin: 2rem 0; }
   .revolver { font-size: 80px; display: inline-block; transition: transform 0.1s; }
-  .revolver.spinning { animation: revolver-shake 0.12s linear infinite; }
+  .revolver.spinning { animation: revolver-charge 0.9s cubic-bezier(.4,0,.2,1) infinite; }
+  @keyframes revolver-charge { 0%{transform:rotate(0) scale(1);} 25%{transform:rotate(-12deg) scale(1.08);} 50%{transform:rotate(10deg) scale(1.05);} 75%{transform:rotate(-6deg) scale(1.1);} 100%{transform:rotate(0) scale(1);} }
   @keyframes revolver-shake { 0%,100%{transform:rotate(-8deg);} 50%{transform:rotate(8deg);} }
+  .revolver.fired { animation: revolver-recoil 0.5s ease-out; }
+  @keyframes revolver-recoil { 0%{transform:translateY(0) scale(1);} 15%{transform:translateY(-18px) scale(1.3) rotate(-25deg);} 100%{transform:translateY(0) scale(1) rotate(0);} }
+  .revolver.safe { animation: revolver-relief 0.8s ease-out; }
+  @keyframes revolver-relief { 0%{transform:scale(1.1);} 60%{transform:scale(0.92);} 100%{transform:scale(1);} }
   .chamber-info { margin-top: 1rem; font-size: 14px; color: #a09cc0; }
   .roulette-fire { font-size: 22px; font-weight: 800; color: #e24b4a; text-align: center; padding: 1.5rem; }
   .roulette-safe { font-size: 22px; font-weight: 800; color: #34d399; text-align: center; padding: 1.5rem; }
+
+  /* 발사 시 화면 전체 연출 */
+  @keyframes screenShake { 0%,100%{transform:translate(0);} 10%{transform:translate(-8px,4px);} 20%{transform:translate(8px,-4px);} 30%{transform:translate(-6px,-2px);} 40%{transform:translate(6px,2px);} 50%{transform:translate(-4px,3px);} 60%{transform:translate(4px,-3px);} 70%{transform:translate(-2px,1px);} 80%{transform:translate(2px,-1px);} }
+  .shake { animation: screenShake 0.5s ease-out; }
+  @keyframes redFlash { 0%{opacity:0;} 20%{opacity:1;} 100%{opacity:0;} }
+  .blood-flash { position: fixed; inset: 0; z-index: 90; pointer-events: none; background: radial-gradient(circle, #e24b4a55, #7a0a0aee); animation: redFlash 0.7s ease-out forwards; }
+  @keyframes safeGlow { 0%{opacity:0;} 30%{opacity:1;} 100%{opacity:0;} }
+  .safe-glow { position: fixed; inset: 0; z-index: 90; pointer-events: none; box-shadow: inset 0 0 100px 20px #34d39955; animation: safeGlow 1s ease-out forwards; }
+
 </style>
 </head>
 <body>
@@ -273,6 +301,7 @@
 
 <!-- 게임 화면 -->
 <div class="screen" id="screen-game">
+  <div id="reconnect-banner" style="display:none; background:#3a2e0c; color:#fbbf24; padding:8px 14px; border-radius:9px; font-size:13px; text-align:center; margin-bottom:0.5rem;">⚠ 상대방 연결이 불안정합니다. 재연결 대기 중...</div>
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
     <div class="logo" style="font-size:18px; margin-bottom:0;">블라인드 수식전</div>
     <div style="display:flex; align-items:center; gap:8px;">
@@ -434,6 +463,7 @@ let roomRef = null;
 let gameListener = null;
 let localSelectedCardIdx = null;
 let localSelectedCard = null;
+let prevSlotFilled = [false,false,false,false,false]; // 슬롯 채움 상태(연출용)
 
 const TURN_SECONDS = 30;
 let timerInterval = null;
@@ -568,6 +598,27 @@ function setupPresence() {
   onDisconnect(presRef).set(false);
 }
 
+// 상대 이탈 유예 (연결 끊김 → 30초 후 확정, 재연결 시 취소)
+const LEAVE_GRACE_MS = 30000;
+let leaveGraceTimer = null;
+function startLeaveGrace(onConfirm) {
+  clearLeaveGrace();
+  // 게임 화면에 재연결 대기 안내
+  const banner = document.getElementById('reconnect-banner');
+  if (banner) banner.style.display = 'block';
+  leaveGraceTimer = setTimeout(() => {
+    leaveGraceTimer = null;
+    stopTimer(); timerTurnKey = null;
+    if (banner) banner.style.display = 'none';
+    onConfirm();
+  }, LEAVE_GRACE_MS);
+}
+function clearLeaveGrace() {
+  if (leaveGraceTimer) { clearTimeout(leaveGraceTimer); leaveGraceTimer = null; }
+  const banner = document.getElementById('reconnect-banner');
+  if (banner) banner.style.display = 'none';
+}
+
 // 코드 복사
 document.getElementById('btn-copy-code').addEventListener('click', () => {
   navigator.clipboard.writeText(roomCode).then(() => {
@@ -660,19 +711,27 @@ function handleGameState(rawData) {
     const oppPresent = presence[oppRole];
     const oppName = oppRole === 'p1' ? data.p1Name : data.p2Name;
 
-    if (data.leftBy === oppRole || oppPresent === false) {
+    if (data.leftBy === oppRole) {
+      // 명시적 종료 → 즉시 확정
       stopTimer(); timerTurnKey = null;
-      const titleEl = document.getElementById('left-title');
-      const msgEl = document.getElementById('left-msg');
-      if (data.leftBy === oppRole) {
-        titleEl.textContent = `${oppName || '상대방'}이(가) 게임을 종료했습니다`;
-        msgEl.textContent = '상대방이 게임을 나갔습니다. 더 이상 진행할 수 없습니다.';
-      } else {
-        titleEl.textContent = '상대방의 연결이 끊겼습니다';
-        msgEl.textContent = `${oppName || '상대방'}의 접속이 끊어졌습니다. 게임을 계속 진행할 수 없습니다.`;
-      }
+      clearLeaveGrace();
+      document.getElementById('left-title').textContent = `${oppName || '상대방'}이(가) 게임을 종료했습니다`;
+      document.getElementById('left-msg').textContent = '상대방이 게임을 나갔습니다. 더 이상 진행할 수 없습니다.';
       showScreen('left');
       return;
+    } else if (oppPresent === false) {
+      // 연결 끊김 → 30초 유예 후 확정 (그 사이 재연결되면 복구)
+      if (!leaveGraceTimer) {
+        startLeaveGrace(() => {
+          document.getElementById('left-title').textContent = '상대방의 연결이 끊겼습니다';
+          document.getElementById('left-msg').textContent = `${oppName || '상대방'}의 접속이 끊어졌습니다. 게임을 계속 진행할 수 없습니다.`;
+          showScreen('left');
+        });
+      }
+      // 유예 중엔 게임 화면 위에 안내만 (아래 정상 렌더는 계속)
+    } else {
+      // 상대 복귀 → 유예 취소
+      clearLeaveGrace();
     }
   }
 
@@ -855,6 +914,8 @@ function renderGame(data) {
     div.className = 'slot ' + (isNumSlot ? 'num' : 'op');
 
     if (filled) {
+      // 직전 렌더 때 비어있던 슬롯이 지금 채워졌으면 연출
+      if (prevSlotFilled[i] === false) div.classList.add('just-placed');
       if (owner === myRole) {
         div.classList.add('filled-mine');
         div.textContent = cardLabel(slots[i]);
@@ -879,8 +940,8 @@ function renderGame(data) {
     }
     slotsEl.appendChild(div);
   }
-
-  // 수식 미리보기
+  // 다음 비교를 위해 현재 채움 상태 저장
+  for (let i = 0; i < 5; i++) prevSlotFilled[i] = !isEmpty(slots[i]);
   const preview = evalFormula(slots);
   const eq = document.createElement('span'); eq.className = 'eq'; eq.textContent = '=';
   const res = document.createElement('div'); res.className = 'result-preview';
@@ -1172,6 +1233,7 @@ function renderHistory(elId, history) {
   document.getElementById(elId).innerHTML = html;
 }
 
+let lastRouletteFx = null; // 룰렛 결과 연출 중복 방지
 function renderRoulette(data) {
   const loser = data.loser; // 'p1' | 'p2' | 'both'
   const chambers = data.chambers || START_CHAMBERS;
@@ -1195,10 +1257,34 @@ function renderRoulette(data) {
   const actionEl = document.getElementById('roulette-action');
   const revolver = document.getElementById('revolver-visual');
 
+  // 결과 없으면(새 룰렛 시작) 연출 플래그·클래스 리셋
+  if (!data.rouletteResult) {
+    lastRouletteFx = null;
+    revolver.classList.remove('fired', 'safe');
+  }
+
   // 결과가 이미 나왔으면 표시
   if (data.rouletteResult) {
     revolver.classList.remove('spinning');
     const fired = data.rouletteResult === 'fired';
+    // 결과 연출 1회 발동 (중복 방지)
+    if (lastRouletteFx !== data.rouletteResult) {
+      lastRouletteFx = data.rouletteResult;
+      if (fired) {
+        revolver.classList.add('fired');
+        const flash = document.createElement('div');
+        flash.className = 'blood-flash';
+        document.body.appendChild(flash);
+        document.body.classList.add('shake');
+        setTimeout(() => { flash.remove(); document.body.classList.remove('shake'); }, 700);
+      } else {
+        revolver.classList.add('safe');
+        const glow = document.createElement('div');
+        glow.className = 'safe-glow';
+        document.body.appendChild(glow);
+        setTimeout(() => glow.remove(), 1000);
+      }
+    }
     if (fired) {
       resultBox.innerHTML = `<div class="roulette-fire">💥 BANG! 실탄이 발사되었습니다</div>`;
     } else {
