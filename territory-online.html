@@ -127,19 +127,6 @@
   /* 5목 완성 칸 반짝임 */
   @keyframes winFlash { 0%{box-shadow:inset 0 0 0 0 var(--win-color);transform:scale(1);} 40%{box-shadow:inset 0 0 12px 3px var(--win-color);transform:scale(1.12);} 100%{box-shadow:inset 0 0 6px 1px var(--win-color);transform:scale(1);} }
   .cell.win-flash { animation: winFlash 0.6s ease-out forwards; z-index: 5; --win-color: #fff; }
-  /* 말 이동 경로 발자국 */
-  .move-trail {
-    position: absolute; width: 55%; height: 55%; border-radius: 50%;
-    opacity: 0; pointer-events: none; z-index: 4;
-    box-shadow: 0 0 8px 2px currentColor;
-    animation: trailPop 1.1s ease-out forwards;
-  }
-  @keyframes trailPop {
-    0% { opacity: 0; transform: scale(0.2); }
-    25% { opacity: 0.9; transform: scale(1.1); }
-    55% { opacity: 0.7; transform: scale(0.95); }
-    100% { opacity: 0; transform: scale(0.8); }
-  }
   .win-title { font-size: 24px; font-weight: 800; color: #34d399; margin-bottom: 6px; }
   .win-sub { font-size: 13px; color: #6b9a85; }
 
@@ -756,28 +743,49 @@ function onGameUpdate(data) {
   if (hasBots()) maybeRunBot();
 }
 
-// 말 이동 경로를 발자국으로 표시 (출발→도착, L자 경로 추정)
+// 말 이동: 도착 칸의 말을 출발 위치에서 시작해 경로(꺾임 포함)를 따라 스르륵 미끄러뜨림
 function showMoveTrail(from, to, player) {
   const [fr, fc] = rc(from), [tr, tc] = rc(to);
-  // 경로 추정: 먼저 가로로, 그다음 세로로 (L자) — 실제 경로와 정확히 같진 않아도 방향은 명확
-  const path = [];
+  // 경로 웨이포인트: 출발 → (가로로) → (세로로) → 도착. 실제 이동대로 ㄱ자.
+  const waypoints = [[fr, fc]];
   let r = fr, c = fc;
-  while (c !== tc) { c += (tc > c ? 1 : -1); path.push(idx(r, c)); }
-  while (r !== tr) { r += (tr > r ? 1 : -1); path.push(idx(r, c)); }
-  // 출발 칸도 표시
-  const allCells = [from, ...path];
-  allCells.forEach((ci, k) => {
-    const el = document.querySelector(`.cell[data-idx="${ci}"]`);
-    if (!el) return;
+  while (c !== tc) { c += (tc > c ? 1 : -1); waypoints.push([r, c]); }
+  while (r !== tr) { r += (tr > r ? 1 : -1); waypoints.push([r, c]); }
+
+  const destCell = document.querySelector(`.cell[data-idx="${to}"]`);
+  const fromCell = document.querySelector(`.cell[data-idx="${from}"]`);
+  if (!destCell || !fromCell) return;
+  const pawn = destCell.querySelector('.pawn');
+  if (!pawn) return;
+
+  // 한 칸당 픽셀 거리 = (출발칸 - 도착칸) 중심거리 / 칸수 (x,y 각각 실측)
+  const ra = fromCell.getBoundingClientRect(), rb = destCell.getBoundingClientRect();
+  const dCols = fc - tc, dRows = fr - tr;
+  const unitX = dCols !== 0 ? (ra.left - rb.left) / dCols : 0;
+  const unitY = dRows !== 0 ? (ra.top - rb.top) / dRows : 0;
+  // 둘 중 0이 아닌 값으로 단위 보정 (직선 이동이면 한쪽만 0이 아님)
+  const unit = Math.abs(unitX) || Math.abs(unitY) || rb.width;
+  // 웨이포인트별 도착 대비 오프셋(px)
+  const offsets = waypoints.map(([wr, wc]) => [ (wc - tc) * unit, (wr - tr) * unit ]);
+
+  pawn.style.transition = 'none';
+  pawn.style.zIndex = '10';
+  pawn.style.transform = `translate(${offsets[0][0]}px, ${offsets[0][1]}px)`;
+  void pawn.offsetWidth; // 시작 위치 강제 적용
+  const STEP_MS = 180;
+  offsets.forEach((off, k) => {
+    if (k === 0) return;
     setTimeout(() => {
-      const fp = document.createElement('div');
-      fp.className = 'move-trail';
-      fp.style.background = COLORS[player];
-      fp.style.color = COLORS[player]; // box-shadow currentColor용
-      el.appendChild(fp);
-      setTimeout(() => fp.remove(), 1100);
-    }, k * 130); // 순차적으로 발자국이 찍힘 (이동 방향이 천천히 보임)
+      pawn.style.transition = `transform ${STEP_MS}ms linear`;
+      pawn.style.transform = `translate(${off[0]}px, ${off[1]}px)`;
+    }, (k - 1) * STEP_MS);
   });
+  const total = (offsets.length - 1) * STEP_MS;
+  setTimeout(() => {
+    pawn.style.transition = '';
+    pawn.style.transform = '';
+    pawn.style.zIndex = '';
+  }, total + 60);
 }
 
 // 봇 조종자 판정: 봇이 아니고 접속 중인 좌석 중 가장 빠른 좌석이 모든 봇을 조종
