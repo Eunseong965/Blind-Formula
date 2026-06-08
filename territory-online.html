@@ -203,7 +203,7 @@
 
   <!-- 대기 화면 -->
   <div class="screen" id="screen-wait">
-    <div class="title">정복 오목 <span style="font-size:11px; color:#34d399; font-weight:600;">v2-bot</span></div>
+    <div class="title">정복 오목 <span style="font-size:11px; color:#34d399; font-weight:600;">v3-botdbg</span></div>
     <div class="card-box" style="text-align:center;">
       <h2>방 코드</h2>
       <div id="wait-code" style="font-size:34px; font-weight:800; letter-spacing:8px; color:#4f8cff; padding:0.5rem 0;">------</div>
@@ -872,6 +872,8 @@ function botDoPlace(p) {
 function botDoMove(p) {
   if (currentPlayer() !== p || state.phase !== 'play') return;
   const move = botChooseMove(state.board, p, state.pawnPos, state.turnCount, state.alive);
+  console.log('[봇'+p+'] 말위치:', state.pawnPos[p], rc(state.pawnPos[p]), '내땅수:', landCount(p), '→ 선택:', move ? rc(move.dest)+' 전투:'+move.capturesEnemy : 'null');
+  if (move && move.capturesEnemy < 0) console.log('  → 거기 두면 라인:', botLineLength(state.board, p, move.dest));
   if (!move) { afterAction(p); return; } // 둘 수 없으면 턴 넘김(안전장치)
 
   if (move.capturesEnemy >= 0) {
