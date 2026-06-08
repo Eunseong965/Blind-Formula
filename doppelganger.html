@@ -193,7 +193,18 @@
         <div style="font-size:15px; font-weight:800;">도플갱어 게임</div>
         <div style="font-size:11px; color:#6b6878;">라운드 <span id="chat-round">1</span>/4 · <span id="chat-myrole">-</span> · <span id="chat-timer" style="color:#fbbf24;">--:--</span></div>
       </div>
-      <button class="btn-ghost" id="btn-guess" style="width:auto; padding:8px 14px; font-size:13px;">추리하기</button>
+      <div style="display:flex; gap:6px;">
+        <button class="btn-ghost" id="btn-myinfo" style="width:auto; padding:8px 12px; font-size:13px;">내 정보</button>
+        <button class="btn-ghost" id="btn-guess" style="width:auto; padding:8px 14px; font-size:13px;">추리하기</button>
+      </div>
+    </div>
+
+    <!-- 내 프로필 모달 -->
+    <div id="myinfo-modal" style="display:none; position:fixed; inset:0; z-index:60; background:#000a; align-items:center; justify-content:center; padding:1.5rem;">
+      <div style="background:#14131c; border:1px solid #2a2740; border-radius:16px; padding:1.4rem; max-width:340px; width:100%;">
+        <div id="myinfo-body"></div>
+        <button class="btn-primary" id="btn-myinfo-close" style="margin-top:1rem;">닫기</button>
+      </div>
     </div>
 
     <!-- 도플갱어 전용: 둔갑 대상 선택 -->
@@ -242,6 +253,7 @@ const GENDERS = ['남성', '여성'];
 const AGES = [16, 17, 18];
 const GEMS = ['사파이어', '루비', '에메랄드', '자수정', '흑요석', '다이아몬드'];
 const ROUND_MS = 180000; // 라운드당 3분
+const GUESS_PER_ROUND = 3; // 라운드당 추리 횟수
 
 // ===== 온라인 상태 =====
 let myName = '';
@@ -835,6 +847,37 @@ document.getElementById('chat-input').addEventListener('keydown', (e) => {
 document.getElementById('btn-guess').addEventListener('click', () => { renderGuess(); showScreen('guess'); });
 document.getElementById('btn-guess-back').addEventListener('click', () => showScreen('game'));
 
+// 내 프로필 확인 모달
+document.getElementById('btn-myinfo').addEventListener('click', () => {
+  if (!myRoleCache || !gameCache) return;
+  const body = document.getElementById('myinfo-body');
+  if (myRoleCache.role === 'student') {
+    const s = gameCache.students[myRoleCache.studentIdx];
+    body.innerHTML = `
+      <h2 style="color:#818cf8; margin-bottom:10px;">내 정체 — 학생 ${s.name}</h2>
+      <table class="profile-table">
+        <tr><td>성별</td><td>${s.gender}</td></tr>
+        <tr><td>나이</td><td>${s.age}세</td></tr>
+        <tr><td>보석</td><td>${s.gem}</td></tr>
+        <tr><td>시크릿 넘버</td><td>${s.secret}</td></tr>
+      </table>`;
+  } else {
+    const p = myRoleCache.profile;
+    body.innerHTML = `
+      <h2 style="color:#fb7185; margin-bottom:10px;">내 정체 — 도플갱어</h2>
+      <table class="profile-table">
+        <tr><td>성별</td><td>${p.gender}<span class="src-tag">← ${STUDENT_NAMES[p.genderSrc]}</span></td></tr>
+        <tr><td>나이</td><td>${p.age}세<span class="src-tag">← ${STUDENT_NAMES[p.ageSrc]}</span></td></tr>
+        <tr><td>보석</td><td>${p.gem}<span class="src-tag">← ${STUDENT_NAMES[p.gemSrc]}</span></td></tr>
+        <tr><td>시크릿 넘버</td><td>${p.secret}<span class="src-tag">← ${STUDENT_NAMES[p.secretSrc]}</span></td></tr>
+      </table>`;
+  }
+  document.getElementById('myinfo-modal').style.display = 'flex';
+});
+document.getElementById('btn-myinfo-close').addEventListener('click', () => {
+  document.getElementById('myinfo-modal').style.display = 'none';
+});
+
 // ===== 추리 (4단계) =====
 let guessSel = {}; // 현재 선택 상태
 
@@ -842,6 +885,23 @@ function renderGuess() {
   const body = document.getElementById('guess-body');
   const title = document.getElementById('guess-title');
   guessSel = {};
+
+  // 감염된 학생은 추리 불가
+  if (gameCache && myRoleCache.role === 'student' && gameCache.infected && gameCache.infected[mySeat]) {
+    title.textContent = '추리';
+    body.innerHTML = `<div class="msg error" style="margin-top:1rem;">도플갱어화되어 추리할 수 없습니다.</div>`;
+    return;
+  }
+
+  // 이번 라운드 추리 횟수 소진 확인 (gameCache 기준)
+  if (gameCache) {
+    const used = (gameCache.guessCount && gameCache.guessCount[gameCache.round] && gameCache.guessCount[gameCache.round][mySeat]) || 0;
+    if (used >= GUESS_PER_ROUND) {
+      title.textContent = '추리';
+      body.innerHTML = `<div class="msg warn" style="margin-top:1rem;">이번 라운드 추리 횟수(${GUESS_PER_ROUND}번)를 모두 사용했습니다.<br>다음 라운드를 기다리세요.</div>`;
+      return;
+    }
+  }
 
   if (myRoleCache.role === 'student') {
     title.textContent = '도플갱어 추리';
@@ -930,6 +990,16 @@ async function submitGuess() {
     return;
   }
 
+  // 라운드당 추리 횟수 제한
+  const usedThisRound = (g.guessCount && g.guessCount[g.round] && g.guessCount[g.round][mySeat]) || 0;
+  if (usedThisRound >= GUESS_PER_ROUND) {
+    document.getElementById('guess-result').innerHTML = `<div class="msg error">이번 라운드 추리 횟수(${GUESS_PER_ROUND}번)를 모두 사용했습니다. 다음 라운드를 기다리세요.</div>`;
+    document.getElementById('btn-submit-guess').style.display = 'none';
+    return;
+  }
+  await update(roomRef, { [`game/guessCount/${g.round}/${mySeat}`]: usedThisRound + 1 });
+  const remainGuess = GUESS_PER_ROUND - (usedThisRound + 1);
+
   if (role === 'student') {
     const dSeat = g.doppelSeat;
     const dProf = g.roles[dSeat].profile;
@@ -947,7 +1017,7 @@ async function submitGuess() {
       // 학생팀 즉시 승리
       await update(roomRef, { phase: 'end', 'game/winner': 'students', 'game/winnerBy': mySeat });
     } else {
-      showFeedback(correct, 5, '', secretHint);
+      showFeedback(correct, 5, '', secretHint, remainGuess);
       // 제출 기록 (라운드 종료 판정에 사용)
       await update(roomRef, { [`game/submitted/${mySeat}`]: { correct, round: g.round } });
     }
@@ -971,9 +1041,9 @@ async function submitGuess() {
     if (success) {
       // 감염 성공
       await update(roomRef, { [`game/infect`]: { target: targetSeat, by: mySeat, round: g.round } });
-      showFeedback(5, 5, '감염 성공! ' + seatNames[targetSeat] + '이(가) 도플갱어화됩니다.');
+      showFeedback(5, 5, '감염 성공! ' + seatNames[targetSeat] + '이(가) 도플갱어화됩니다.', '', 0);
     } else {
-      showFeedback(correct, 5, isStudent ? '감염 실패.' : '그 좌석은 학생이 아닙니다.', isStudent ? secretHint : '');
+      showFeedback(correct, 5, isStudent ? '감염 실패.' : '그 좌석은 학생이 아닙니다.', isStudent ? secretHint : '', remainGuess);
     }
   }
 }
@@ -985,15 +1055,17 @@ function secretHintText(guess, answer) {
   return `🔽 시크릿은 ${guess}보다 <b>낮습니다</b>`;
 }
 
-function showFeedback(correct, total, extra, secretHint) {
+function showFeedback(correct, total, extra, secretHint, remainGuess) {
+  const canRetry = remainGuess > 0;
   document.getElementById('guess-result').innerHTML = `
     <div class="feedback-box" style="margin-top:1rem;">
       <div class="feedback-num">${correct} / ${total}</div>
       <div class="feedback-sub">${correct}개 항목이 맞았습니다${extra ? '<br>'+extra : ''}</div>
     </div>
     ${secretHint ? `<div class="msg warn">${secretHint}</div>` : ''}
-    <div class="msg info">시크릿 외 어떤 항목이 맞았는지는 알려주지 않습니다. 다음 라운드에 더 정교하게 추리하세요.</div>`;
-  document.getElementById('btn-submit-guess').style.display = 'none';
+    <div class="msg info">시크릿 외 어떤 항목이 맞았는지는 비밀입니다.${canRetry ? ` 이번 라운드 추리 ${remainGuess}번 남음.` : ' 이번 라운드 추리를 모두 사용했습니다.'}</div>`;
+  const btn = document.getElementById('btn-submit-guess');
+  if (btn) btn.style.display = canRetry ? 'block' : 'none';
 }
 
 // ===== 종료 화면 (5단계) =====
