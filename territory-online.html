@@ -203,7 +203,7 @@
 
   <!-- 대기 화면 -->
   <div class="screen" id="screen-wait">
-    <div class="title">정복 오목</div>
+    <div class="title">정복 오목 <span style="font-size:11px; color:#34d399; font-weight:600;">v2-bot</span></div>
     <div class="card-box" style="text-align:center;">
       <h2>방 코드</h2>
       <div id="wait-code" style="font-size:34px; font-weight:800; letter-spacing:8px; color:#4f8cff; padding:0.5rem 0;">------</div>
@@ -561,14 +561,15 @@ function renderWait(data) {
   const beginBtn = document.getElementById('btn-begin');
   const beginBotBtn = document.getElementById('btn-begin-bot');
   const hint = document.getElementById('wait-hint');
-  // 방장 판정: 타입 안전하게 (Firebase가 숫자/문자 섞을 수 있음) + 좌석0 fallback
-  const amHost = (Number(data.host) === Number(mySeat)) || (mySeat === 0 && (data.host === undefined || data.host === null));
+  // 방장 판정: 좌석0이거나 host와 일치하면 방장
+  const amHost = (Number(data.host) === Number(mySeat)) || mySeat === 0;
+  const hasEmpty = count < 4;
   if (amHost && count === 4) {
     beginBtn.style.display = 'block';
     beginBotBtn.style.display = 'none';
     hint.style.display = 'none';
-  } else if (amHost && count >= 1 && count < 4) {
-    // 방장 + 빈자리 있음 → 봇으로 채우고 시작 가능
+  } else if (amHost && hasEmpty && count >= 1) {
+    // 방장 + 빈자리 → 봇 채우기
     beginBtn.style.display = 'none';
     beginBotBtn.style.display = 'block';
     beginBotBtn.textContent = `🤖 빈자리 봇 ${4 - count}명으로 채우고 시작`;
