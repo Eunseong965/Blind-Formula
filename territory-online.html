@@ -127,6 +127,17 @@
   /* 5목 완성 칸 반짝임 */
   @keyframes winFlash { 0%{box-shadow:inset 0 0 0 0 var(--win-color);transform:scale(1);} 40%{box-shadow:inset 0 0 12px 3px var(--win-color);transform:scale(1.12);} 100%{box-shadow:inset 0 0 6px 1px var(--win-color);transform:scale(1);} }
   .cell.win-flash { animation: winFlash 0.6s ease-out forwards; z-index: 5; --win-color: #fff; }
+  /* 말 이동 경로 발자국 */
+  .move-trail {
+    position: absolute; width: 38%; height: 38%; border-radius: 50%;
+    opacity: 0; pointer-events: none; z-index: 4;
+    animation: trailPop 0.6s ease-out forwards;
+  }
+  @keyframes trailPop {
+    0% { opacity: 0; transform: scale(0.3); }
+    35% { opacity: 0.85; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.7); }
+  }
   .win-title { font-size: 24px; font-weight: 800; color: #34d399; margin-bottom: 6px; }
   .win-sub { font-size: 13px; color: #6b9a85; }
 
@@ -709,8 +720,19 @@ function onGameUpdate(data) {
   // 내가 그리던 경로는 보존 (내 턴이고 아직 확정 안 했으면)
   const prevSelected = state ? state.selected : null;
   const prevPath = state ? state.path : [];
+  const prevPawnPos = state ? (state.pawnPos || []).slice() : null;
 
   state = deserializeState(data.game);
+
+  // 말 이동 감지 → 경로 발자국 표시 (시각 효과, 로직 무관)
+  if (prevPawnPos) {
+    for (let pl = 0; pl < 4; pl++) {
+      const before = prevPawnPos[pl], after = state.pawnPos[pl];
+      if (before >= 0 && after >= 0 && before !== after) {
+        showMoveTrail(before, after, pl);
+      }
+    }
+  }
 
   // 내 턴이고 모드(steal/retreat)가 아니면 그리던 경로 복원
   const myTurn = (currentPlayer() === mySeat);
@@ -726,6 +748,29 @@ function onGameUpdate(data) {
 
   // 봇 자동 실행 (봇이 있을 때만)
   if (hasBots()) maybeRunBot();
+}
+
+// 말 이동 경로를 발자국으로 표시 (출발→도착, L자 경로 추정)
+function showMoveTrail(from, to, player) {
+  const [fr, fc] = rc(from), [tr, tc] = rc(to);
+  // 경로 추정: 먼저 가로로, 그다음 세로로 (L자) — 실제 경로와 정확히 같진 않아도 방향은 명확
+  const path = [];
+  let r = fr, c = fc;
+  while (c !== tc) { c += (tc > c ? 1 : -1); path.push(idx(r, c)); }
+  while (r !== tr) { r += (tr > r ? 1 : -1); path.push(idx(r, c)); }
+  // 출발 칸도 표시
+  const allCells = [from, ...path];
+  allCells.forEach((ci, k) => {
+    const el = document.querySelector(`.cell[data-idx="${ci}"]`);
+    if (!el) return;
+    setTimeout(() => {
+      const fp = document.createElement('div');
+      fp.className = 'move-trail';
+      fp.style.background = COLORS[player];
+      el.appendChild(fp);
+      setTimeout(() => fp.remove(), 600);
+    }, k * 90); // 순차적으로 발자국이 찍힘 (이동 방향 보임)
+  });
 }
 
 // 봇 조종자 판정: 봇이 아니고 접속 중인 좌석 중 가장 빠른 좌석이 모든 봇을 조종
@@ -841,19 +886,43 @@ function botDoRetreat() {
   doRetreatPick(best);
 }
 
-// 봇 초기 배치: 중앙 근처 빈 칸 선호 (5목 만들기 유리)
+// 봇 초기 배치: 보드 4분면에 분산 + 구역 내 랜덤 (뭉침 방지, 5목 공간 확보)
 function botDoPlace(p) {
   if (currentPlayer() !== p || state.phase !== 'place') return;
-  // 빈 칸 중 중앙에 가까운 곳 우선
-  let best = -1, bestD = Infinity;
+
+  // 이미 배치된 사람들 위치 (사람·봇 모두) — 거기서 멀리 떨어지게
+  const taken = [];
+  for (let i = 0; i < SIZE*SIZE; i++) {
+    if (state.board[i].pawn !== -1) taken.push(i);
+  }
+
+  // 후보: 빈 칸들. 각 칸을 "이미 놓인 말들과의 최소 거리"로 점수화 + 약간의 랜덤
+  // 가장자리(0행/0열/7행/7열)는 살짝 피함 (5목 만들 공간)
+  const candidates = [];
   for (let i = 0; i < SIZE*SIZE; i++) {
     const c = state.board[i];
     if (c.owner !== -1 || c.pawn !== -1) continue;
     const [r, cc] = rc(i);
-    const d = Math.abs(r - 3.5) + Math.abs(cc - 3.5);
-    if (d < bestD) { bestD = d; best = i; }
+    // 다른 말들과의 최소 거리 (멀수록 좋음 = 뭉침 방지)
+    let minDist = Infinity;
+    for (const t of taken) {
+      const [tr, tcc] = rc(t);
+      const dd = Math.abs(r - tr) + Math.abs(cc - tcc);
+      if (dd < minDist) minDist = dd;
+    }
+    if (taken.length === 0) minDist = 0; // 첫 배치는 거리 의미 없음
+    // 가장자리 페널티 (맨 끝줄이면 -2)
+    const edgePenalty = (r === 0 || r === SIZE-1 || cc === 0 || cc === SIZE-1) ? 2 : 0;
+    // 점수: 거리 멀수록↑, 가장자리↓, 랜덤 가미
+    const score = minDist - edgePenalty + Math.random() * 3;
+    candidates.push({ idx: i, score });
   }
-  if (best < 0) return;
+  if (candidates.length === 0) return;
+  // 상위 후보 중 랜덤 (매번 다른 시작 위치)
+  candidates.sort((a, b) => b.score - a.score);
+  const topN = Math.min(5, candidates.length);
+  const best = candidates[Math.floor(Math.random() * topN)].idx;
+
   state.board[best].owner = p;
   state.board[best].pawn = p;
   state.pawnPos[p] = best;
@@ -880,10 +949,17 @@ function botDoMove(p) {
   if (!move) { afterAction(p); return; } // 둘 수 없으면 턴 넘김(안전장치)
 
   if (move.capturesEnemy >= 0) {
-    // 전투 시작 (카드 뽑기는 4단계에서 봇이 자동 처리)
-    startBattle(p, move.capturesEnemy, move.dest, state.pawnPos[p]);
+    // 전투 시작 — 목적지에 그 적 말이 여전히 있는지 확인
+    const tc = state.board[move.dest];
+    if (tc.pawn === move.capturesEnemy) {
+      startBattle(p, move.capturesEnemy, move.dest, state.pawnPos[p]);
+    } else {
+      afterAction(p); // 적이 이미 떠났으면 턴 넘김
+    }
   } else {
-    // 빈 칸 이동 + 점령
+    // 빈 칸 이동 + 점령 — 목적지가 여전히 비었는지 확인
+    const tc = state.board[move.dest];
+    if (tc.pawn !== -1) { afterAction(p); return; } // 누가 먼저 차지했으면 턴 넘김
     state.board[state.pawnPos[p]].pawn = -1;
     moveePawnTo(p, move.dest);
     afterAction(p);
@@ -1127,9 +1203,18 @@ function confirmMove(p) {
 // 말을 target으로 옮기고, 빈 땅이면 점령 (주인 바뀐 땅 불변)
 function moveePawnTo(p, target) {
   const cell = state.board[target];
+  // 안전장치: 목적지에 다른 말이 있으면 이동 취소 (말 겹침/통과 방지)
+  if (cell.pawn !== -1 && cell.pawn !== p) {
+    console.warn('이동 차단: 목적지에 다른 말 존재', target, cell.pawn);
+    return false;
+  }
+  // 출발 칸의 내 말 제거 (혹시 안 지워졌으면)
+  const old = state.pawnPos[p];
+  if (old >= 0 && old !== target && state.board[old].pawn === p) state.board[old].pawn = -1;
   cell.pawn = p;
   if (cell.owner === -1) cell.owner = p; // 빈 땅만 점령, 이미 주인 있으면 불변
   state.pawnPos[p] = target;
+  return true;
 }
 
 // ===== 전투 (온라인: state.battle로 동기화) =====
