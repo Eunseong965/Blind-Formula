@@ -49,7 +49,7 @@
   .turn-tag { font-size: 14px; font-weight: 700; padding: 5px 14px; border-radius: 8px; background: var(--pc-soft); color: var(--pc); border: 1px solid var(--pc); }
   .phase-hint { font-size: 12px; color: #8b88a0; margin-bottom: 10px; min-height: 18px; text-align:center; }
 
-  .board { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; background: #1a1c26; padding: 6px; border-radius: 12px; aspect-ratio: 1; }
+  .board { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; background: #1a1c26; padding: 6px; border-radius: 12px; aspect-ratio: 1; }
   .cell {
     background: #0f1019; border-radius: 5px; position: relative;
     display: flex; align-items: center; justify-content: center;
@@ -151,7 +151,7 @@
   <!-- 로비 화면 -->
   <div class="screen active" id="screen-lobby">
     <div class="title">정복 오목</div>
-    <div class="sub">8×8 · 4인 영토 배틀로얄 · 온라인</div>
+    <div class="sub">6×6 · 4인 영토 배틀로얄 · 온라인</div>
     <div class="card-box">
       <h2>내 이름</h2>
       <input type="text" id="lobby-name" maxlength="8" placeholder="닉네임"
@@ -188,7 +188,7 @@
       <h2 style="color:#34d399; margin-bottom:14px;">정복 오목 — 규칙</h2>
       <div style="font-size:12.5px; line-height:1.75; color:#c4c2d4;">
         <p style="color:#34d399; font-weight:700; margin-bottom:4px;">🎯 목표</p>
-        <p style="margin-bottom:12px;">8×8 판에서 4명이 영토를 넓히며 경쟁. 내 땅으로 5목을 만들거나, 최후의 생존자가 되거나, 판이 다 차면 최다 영토를 가진 사람이 승리.</p>
+        <p style="margin-bottom:12px;">6×6 판에서 4명이 영토를 넓히며 경쟁. 내 땅으로 5목을 만들거나, 최후의 생존자가 되거나, 판이 다 차면 최다 영토를 가진 사람이 승리.</p>
 
         <p style="color:#4f8cff; font-weight:700; margin-bottom:4px;">🏁 시작</p>
         <p style="margin-bottom:12px;">각자 말 1개를 빈 칸에 놓고 시작. 놓은 칸은 내 땅이 된다. 턴 순서는 무작위.</p>
@@ -285,7 +285,7 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getDatabase(fbApp);
 
-const SIZE = 8;
+const SIZE = 6;
 const COLORS = ['#ff5a6e', '#4f8cff', '#34d399', '#fbbf24'];
 const DEFAULT_NAMES = ['플레이어 1', '플레이어 2', '플레이어 3', '플레이어 4'];
 
@@ -865,7 +865,8 @@ function botDoSteal() {
   for (const ci of sm.stealable) {
     let score = botLineLength(state.board, winner, ci) * 10; // 내 라인 형성
     const [r, c] = rc(ci);
-    score -= (Math.abs(r - 3.5) + Math.abs(c - 3.5)); // 중앙 선호
+    const mid = (SIZE - 1) / 2;
+    score -= (Math.abs(r - mid) + Math.abs(c - mid)); // 중앙 선호
     if (score > bestScore) { bestScore = score; best = ci; }
   }
   doLandSteal(best);
@@ -880,7 +881,8 @@ function botDoRetreat() {
   for (const ci of rm.lands) {
     let score = botLineLength(state.board, loser, ci) * 10;
     const [r, c] = rc(ci);
-    score -= (Math.abs(r - 3.5) + Math.abs(c - 3.5));
+    const mid = (SIZE - 1) / 2;
+    score -= (Math.abs(r - mid) + Math.abs(c - mid));
     // 적 말 있는 칸은 연쇄 전투 위험 → 회피
     if (state.board[ci].pawn !== -1 && state.board[ci].pawn !== loser) score -= 50;
     if (score > bestScore) { bestScore = score; best = ci; }
@@ -1000,6 +1002,7 @@ function render() {
   // 보드
   const boardEl = document.getElementById('board');
   boardEl.innerHTML = '';
+  boardEl.style.gridTemplateColumns = `repeat(${SIZE}, 1fr)`; // SIZE에 맞춰 칸 수 자동
   // 경로 그리는 중이면 다음 갈 수 있는 인접 칸 계산
   let nextCells = [];
   if (state.phase === 'play' && state.selected !== null && !state.stealMode && state.path.length < 4) {
