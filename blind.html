@@ -557,18 +557,19 @@ function showGameMsg(text, type = 'info') {
 // 규칙 펼치기 토글
 // 봇과 대전 (로컬에서 내 브라우저가 봇 p2를 조종)
 let vsBot = false;
-// 봇 행동 스케줄러: 같은 상황(sig)은 한 번만, 새 상황은 항상 예약 실행
+// 봇 행동 스케줄러: 같은 상황(sig)은 짧은 시간 내 중복만 막고, 실행 후엔 해제(재시도 가능)
 let botLastSig = null;
 let botTimer = null;
 let botPollTimer = null;
 function scheduleBotAction(sig, fn, delay = 900) {
-  if (botLastSig === sig) return; // 이미 이 상황 처리(예약)함
+  if (botLastSig === sig) return; // 이미 이 상황 예약/처리 중
   botLastSig = sig;
   if (botTimer) clearTimeout(botTimer);
   botTimer = setTimeout(async () => {
     botTimer = null;
     try { await fn(); }
-    catch (e) { console.error('봇 행동 오류', e); botLastSig = null; } // 실패 시 재시도 허용
+    catch (e) { console.error('봇 행동 오류', e); }
+    finally { botLastSig = null; } // 실행 끝나면 항상 해제 → 상황 남아있으면 폴링/다음 업데이트가 재시도
   }, delay);
 }
 function resetBotScheduler() {
@@ -876,6 +877,7 @@ function handleGameState(rawData) {
     showScreen('end');
     renderEnd(data);
     // 봇 자동 확인 (룰렛으로 넘어가게)
+    console.log('[종료디버그] end 화면 — revealAck:', JSON.stringify(data.revealAck));
     if (vsBot && data.revealAck && !data.revealAck.p2) {
       // 패자 계산 (renderEnd와 동일 기준)
       const p1total = (data.scores.p1[0] ?? 0) + (data.scores.p1[2] ?? 0);
@@ -883,11 +885,13 @@ function handleGameState(rawData) {
       let loser = 'both';
       if (p1total > p2total) loser = 'p2';
       else if (p2total > p1total) loser = 'p1';
+      console.log('[종료디버그] 봇 end ack 예약 — 패자:', loser);
       scheduleBotAction('end:' + data.matchNum, async () => {
         const snap = await get(roomRef);
         if (!snap.exists()) return;
         const cur = normalizeData(snap.val());
         if (cur.phase === 'end' && cur.revealAck && !cur.revealAck.p2) {
+          console.log('[종료디버그] 봇 end ack 실행 → applyEndAck, 패자:', loser);
           await applyEndAck(cur, 'p2', loser);
         }
       }, 1500);
@@ -896,9 +900,11 @@ function handleGameState(rawData) {
     stopTimer(); timerTurnKey = null;
     showScreen('roulette');
     renderRoulette(data);
+    console.log('[룰렛디버그] loser:', data.loser, '| rouletteResult:', JSON.stringify(data.rouletteResult), '| rouletteAck:', JSON.stringify(data.rouletteAck), '| myRole:', myRole);
     // 봇이 패자면 자동으로 방아쇠 / 결과 나오면 자동 확인
     if (vsBot) {
       if (data.loser === 'p2' && !data.rouletteResult) {
+        console.log('[룰렛디버그] 봇이 패자 → 방아쇠 예약');
         scheduleBotAction('roulette-fire:' + data.matchNum, async () => {
           const snap = await get(roomRef);
           if (!snap.exists()) return;
@@ -907,18 +913,23 @@ function handleGameState(rawData) {
             const chambers = cur.chambers || START_CHAMBERS;
             const bullets = Math.min(BULLETS, chambers);
             const fired = Math.floor(Math.random() * chambers) < bullets;
+            console.log('[룰렛디버그] 봇 방아쇠 결과:', fired ? 'fired' : 'safe');
             await update(roomRef, { rouletteResult: fired ? 'fired' : 'safe' });
           }
         }, 1500);
       } else if (data.rouletteResult && data.rouletteAck && !data.rouletteAck.p2) {
+        console.log('[룰렛디버그] 봇 결과확인(ack) 예약');
         scheduleBotAction('roulette-ack:' + data.matchNum, async () => {
           const snap = await get(roomRef);
           if (!snap.exists()) return;
           const cur = normalizeData(snap.val());
           if (cur.rouletteResult && cur.rouletteAck && !cur.rouletteAck.p2) {
+            console.log('[룰렛디버그] 봇 ack 실행 → advanceAfterRoulette');
             await advanceAfterRoulette(cur, cur.rouletteResult === 'fired', 'p2');
           }
         }, 1200);
+      } else {
+        console.log('[룰렛디버그] 봇 할 일 없음 (사람 차례거나 이미 처리됨)');
       }
     }
   } else if (data.phase === 'dead') {
