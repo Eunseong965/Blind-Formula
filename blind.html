@@ -841,8 +841,10 @@ function handleGameState(rawData) {
     showScreen('game');
     renderGame(data);
     // 봇 차례면 자동으로 둠. 시그니처로 중복 실행만 막고, 새 상황은 항상 처리
+    if (vsBot) console.log('[봇디버그] playing — currentTurn:', data.currentTurn, 'round:', data.round, 'slotCount:', data.slotCount, 'roundOwner:', data.roundOwner);
     if (vsBot && data.currentTurn === 'p2') {
       scheduleBotAction('play:' + data.round + ':' + data.slotCount, async () => {
+        console.log('[봇디버그] botPlay 실행 시도');
         await botPlay();
       });
     }
@@ -1174,12 +1176,13 @@ async function botPlay() {
   const snap = await get(roomRef);
   if (!snap.exists()) return;
   const data = normalizeData(snap.val());
-  if (data.phase !== 'playing' || data.currentTurn !== 'p2') return;
+  if (data.phase !== 'playing' || data.currentTurn !== 'p2') { console.log('[봇디버그] botPlay 진입가드 탈락 — phase:', data.phase, 'turn:', data.currentTurn); return; }
 
   // 이 라운드 주인이 봇(p2)이면 최대화, 아니면 방해(최소화)
   const maximize = (data.roundOwner === 'p2');
   const move = botChooseMove(data.slots, data.p2Used, maximize);
-  if (!move) return;
+  console.log('[봇디버그] botChooseMove 결과:', move, '| p2Used:', JSON.stringify(data.p2Used));
+  if (!move) { console.log('[봇디버그] 둘 수 있는 수 없음 — 멈춤!'); return; }
 
   const newSlots = data.slots.map(v => isEmpty(v) ? EMPTY : v);
   const newSlotOwner = data.slotOwner.map(v => isEmpty(v) ? EMPTY : v);
