@@ -727,6 +727,7 @@ function onGameUpdate(data) {
       }
     }
   }
+  if (moves.length > 0) console.log('[이동감지]', JSON.stringify(moves), 'prevPawn:', JSON.stringify(prevPawnPos), 'now:', JSON.stringify(state.pawnPos));
 
   // 내 턴이고 모드(steal/retreat)가 아니면 그리던 경로 복원
   const myTurn = (currentPlayer() === mySeat);
@@ -749,6 +750,7 @@ function onGameUpdate(data) {
 
 // 말 이동: 도착 칸의 말을 출발 위치에서 시작해 경로(꺾임 포함)를 따라 스르륵 미끄러뜨림
 function showMoveTrail(from, to, player) {
+  console.log('[슬라이드 호출됨]', from, '→', to, '말', player);
   const [fr, fc] = rc(from), [tr, tc] = rc(to);
   // 경로 웨이포인트: 출발 → (가로로) → (세로로) → 도착. 실제 이동대로 ㄱ자.
   const waypoints = [[fr, fc]];
