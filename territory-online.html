@@ -214,6 +214,7 @@
       <div id="wait-players"></div>
     </div>
     <button class="btn-primary" id="btn-begin" style="display:none;">게임 시작 (방장)</button>
+    <button class="btn-ghost" id="btn-begin-bot" style="display:none; width:100%; margin-top:8px;">🤖 빈자리 봇으로 채우고 시작</button>
     <div id="wait-hint" class="msg info" style="text-align:center;">4명이 모이면 방장이 시작할 수 있어요</div>
     <button class="btn-ghost" id="btn-leave-wait" style="width:100%; margin-top:10px;">나가기</button>
   </div>
@@ -424,6 +425,7 @@ document.getElementById('btn-copy').addEventListener('click', () => {
 
 document.getElementById('btn-leave-wait').addEventListener('click', () => leaveRoom());
 document.getElementById('btn-begin').addEventListener('click', startGameAsHost);
+document.getElementById('btn-begin-bot').addEventListener('click', startGameWithBots);
 document.getElementById('btn-restart').addEventListener('click', () => leaveRoom());
 document.getElementById('btn-win-restart').addEventListener('click', () => leaveRoom());
 
@@ -445,6 +447,7 @@ function handleRoom(data) {
     onGameUpdate(data);
     lastPresence = data.presence || {};
     lastSeats = data.seats || {};
+    botSeatsCache = data.botSeats || {};
     showDisconnect(lastPresence, lastSeats);
     // 주기적 이탈 체크 시작 (업데이트가 안 와도 30초 후 탈락 처리되게)
     if (!dcCheckTimer) {
@@ -452,9 +455,41 @@ function handleRoom(data) {
         if (state && state.winner === null) showDisconnect(lastPresence, lastSeats);
       }, 5000);
     }
+    if (hasBots()) startBotPolling();
   }
 }
 let lastPresence = {}, lastSeats = {}, dcCheckTimer = null;
+let botSeatsCache = {}; // 어느 좌석이 봇인지 (게임 중 캐시)
+function hasBots() { return Object.values(botSeatsCache).some(v => v === true); }
+
+// 봇 행동 스케줄러: 같은 상황(sig)은 중복 방지, 실행 후 해제(재시도 가능)
+let botLastSig = null, botTimer = null, botPollTimer = null;
+function scheduleBotAction(sig, fn, delay = 800) {
+  if (botLastSig === sig) return;
+  botLastSig = sig;
+  if (botTimer) clearTimeout(botTimer);
+  botTimer = setTimeout(async () => {
+    botTimer = null;
+    try { await fn(); }
+    catch (e) { console.error('봇 행동 오류', e); }
+    finally { botLastSig = null; }
+  }, delay);
+}
+function resetBotScheduler() {
+  botLastSig = null;
+  if (botTimer) { clearTimeout(botTimer); botTimer = null; }
+  if (botPollTimer) { clearInterval(botPollTimer); botPollTimer = null; }
+}
+// 폴링: 타이밍으로 놓친 봇 행동을 주기적으로 복구 (전투·모드 포함)
+function startBotPolling() {
+  if (botPollTimer) return;
+  botPollTimer = setInterval(() => {
+    if (!hasBots() || botTimer || !state || state.winner !== null) return;
+    if (!amBotController()) return;
+    botLastSig = null;
+    maybeRunBot();
+  }, 3000);
+}
 
 // 게임 중 연결 끊긴 플레이어 표시 + 자동 탈락 처리
 let disconnectSince = {}; // seat -> 끊긴 시각
@@ -522,14 +557,25 @@ function renderWait(data) {
   document.getElementById('wait-players').innerHTML = html;
   document.getElementById('wait-count').textContent = count;
 
-  // 방장이고 4명 모이면 시작 버튼
+  // 방장이고 4명 모이면 시작 버튼 / 방장이면 빈자리 봇 채우기 버튼
   const beginBtn = document.getElementById('btn-begin');
+  const beginBotBtn = document.getElementById('btn-begin-bot');
   const hint = document.getElementById('wait-hint');
-  if (mySeat === data.host && count === 4) {
+  const amHost = mySeat === data.host;
+  if (amHost && count === 4) {
     beginBtn.style.display = 'block';
+    beginBotBtn.style.display = 'none';
     hint.style.display = 'none';
+  } else if (amHost && count >= 1 && count < 4) {
+    // 방장 + 빈자리 있음 → 봇으로 채우고 시작 가능
+    beginBtn.style.display = 'none';
+    beginBotBtn.style.display = 'block';
+    beginBotBtn.textContent = `🤖 빈자리 봇 ${4 - count}명으로 채우고 시작`;
+    hint.style.display = 'block';
+    hint.textContent = `사람 ${count}명 — 더 기다리거나, 봇으로 채워 시작하세요`;
   } else {
     beginBtn.style.display = 'none';
+    beginBotBtn.style.display = 'none';
     hint.style.display = 'block';
     hint.textContent = count < 4 ? `4명이 모이면 시작할 수 있어요 (${count}/4)` : '방장이 시작하기를 기다리는 중...';
   }
@@ -545,6 +591,36 @@ async function startGameAsHost() {
   await update(roomRef, { phase: 'playing', game: serializeState(g) });
 }
 
+// 빈 좌석을 봇으로 채우고 시작 (방장만)
+const BOT_NAMES = ['🤖 알파', '🤖 베타', '🤖 감마'];
+async function startGameWithBots() {
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  const seats = { ...(data.seats || {}) };
+  const presence = { ...(data.presence || {}) };
+  const botSeats = {}; // 좌석 -> true (봇 여부)
+  let botIdx = 0;
+  for (let i = 0; i < 4; i++) {
+    if (!seats[i]) {
+      seats[i] = BOT_NAMES[botIdx % BOT_NAMES.length];
+      presence[i] = true;       // 봇은 항상 접속 상태
+      botSeats[i] = true;
+      botIdx++;
+    } else {
+      botSeats[i] = false;
+    }
+  }
+  const names = [0,1,2,3].map(i => seats[i]);
+  const g = makeInitialState(names);
+  await update(roomRef, {
+    phase: 'playing',
+    seats, presence,
+    botSeats,                   // 어느 좌석이 봇인지 (봇 조종에 사용)
+    game: serializeState(g),
+  });
+}
+
 function leaveRoom() {
   if (gameListener && roomRef) off(roomRef, 'value', gameListener);
   if (roomRef && mySeat >= 0) {
@@ -553,6 +629,7 @@ function leaveRoom() {
   gameListener = null; roomRef = null; roomCode = ''; mySeat = -1; isHost = false;
   if (dcCheckTimer) { clearInterval(dcCheckTimer); dcCheckTimer = null; }
   disconnectSince = {};
+  botSeatsCache = {}; resetBotScheduler();
   showScreen('lobby');
 }
 
@@ -644,6 +721,166 @@ function onGameUpdate(data) {
     showScreen('game');
   }
   render();
+
+  // 봇 자동 실행 (봇이 있을 때만)
+  if (hasBots()) maybeRunBot();
+}
+
+// 봇 조종자 판정: 봇이 아니고 접속 중인 좌석 중 가장 빠른 좌석이 모든 봇을 조종
+function amBotController() {
+  for (let i = 0; i < 4; i++) {
+    const isBot = botSeatsCache[i] === true;
+    const present = lastPresence[i] !== false;
+    if (!isBot && present) return i === mySeat;
+  }
+  return false;
+}
+
+// 현재 차례/모드가 봇이면 두뇌로 자동 처리 (조종자만)
+function maybeRunBot() {
+  if (!amBotController()) return;
+  if (!state || state.winner !== null) return;
+
+  // 1) 전투 중
+  if (state.battle) {
+    const b = state.battle;
+    const bothDone = b.atkCard > 0 && b.defCard > 0;
+    if (!bothDone) {
+      // 봇이 공격자/방어자인데 아직 카드 안 뽑았으면 자동 선택
+      if (botSeatsCache[b.attacker] === true && !(b.atkCard > 0)) {
+        scheduleBotAction('bot-atk:' + b.target + ':' + b.attacker, () => botPickCard('atk'), 800);
+        return;
+      }
+      if (botSeatsCache[b.defender] === true && !(b.defCard > 0)) {
+        scheduleBotAction('bot-def:' + b.target + ':' + b.defender, () => botPickCard('def'), 800);
+        return;
+      }
+    } else {
+      // 양쪽 다 뽑음 → 승자가 봇이면 결과 진행
+      const winner = b.atkCard > b.defCard ? b.attacker : b.defender;
+      if (botSeatsCache[winner] === true) {
+        scheduleBotAction('bot-resolve:' + b.target + ':' + winner, () => resolveBattleResult(), 1000);
+        return;
+      }
+    }
+    return; // 전투 중엔 다른 행동 안 함
+  }
+
+  // 2) 땅 뺏기 모드: 승자가 봇이면
+  if (state.stealMode) {
+    if (botSeatsCache[state.stealMode.winner] === true) {
+      scheduleBotAction('bot-steal:' + state.turnCount + ':' + state.stealMode.winner, () => botDoSteal(), 800);
+    }
+    return;
+  }
+
+  // 3) 후퇴 모드: 패자가 봇이면
+  if (state.retreatMode) {
+    if (botSeatsCache[state.retreatMode.loser] === true) {
+      scheduleBotAction('bot-retreat:' + state.turnCount + ':' + state.retreatMode.loser, () => botDoRetreat(), 800);
+    }
+    return;
+  }
+
+  // 4) 일반 턴: 현재 플레이어가 봇이면
+  const p = currentPlayer();
+  if (botSeatsCache[p] !== true) return;
+
+  if (state.phase === 'place') {
+    scheduleBotAction('bot-place:' + p + ':' + state.placedCount, () => botDoPlace(p), 700);
+  } else if (state.phase === 'play') {
+    scheduleBotAction('bot-play:' + p + ':' + state.turnCount + ':' + landCount(p), () => botDoMove(p), 800);
+  }
+}
+
+// 봇 전투 카드: 높은 카드 선호하되 약간의 변칙 (예측 방지)
+function botPickCard(role) {
+  if (!state.battle) return;
+  const b = state.battle;
+  if (role === 'atk' && b.atkCard > 0) return;
+  if (role === 'def' && b.defCard > 0) return;
+  // 70% 확률로 3~4, 30%로 1~4 랜덤 (강하되 읽히지 않게)
+  let n;
+  if (Math.random() < 0.7) n = 3 + Math.floor(Math.random() * 2); // 3 or 4
+  else n = 1 + Math.floor(Math.random() * 4);
+  pickBattleCard(role, n);
+}
+
+// 봇 땅 뺏기: 자기 5목에 가장 유리한 칸 (없으면 적 라인 끊는 칸)
+function botDoSteal() {
+  const sm = state.stealMode;
+  if (!sm) return;
+  const winner = sm.winner;
+  let best = sm.stealable[0], bestScore = -Infinity;
+  for (const ci of sm.stealable) {
+    let score = botLineLength(state.board, winner, ci) * 10; // 내 라인 형성
+    const [r, c] = rc(ci);
+    score -= (Math.abs(r - 3.5) + Math.abs(c - 3.5)); // 중앙 선호
+    if (score > bestScore) { bestScore = score; best = ci; }
+  }
+  doLandSteal(best);
+}
+
+// 봇 후퇴: 자기 5목 라인을 잇는 땅으로 (없으면 중앙 가까운 곳)
+function botDoRetreat() {
+  const rm = state.retreatMode;
+  if (!rm) return;
+  const loser = rm.loser;
+  let best = rm.lands[0], bestScore = -Infinity;
+  for (const ci of rm.lands) {
+    let score = botLineLength(state.board, loser, ci) * 10;
+    const [r, c] = rc(ci);
+    score -= (Math.abs(r - 3.5) + Math.abs(c - 3.5));
+    // 적 말 있는 칸은 연쇄 전투 위험 → 회피
+    if (state.board[ci].pawn !== -1 && state.board[ci].pawn !== loser) score -= 50;
+    if (score > bestScore) { bestScore = score; best = ci; }
+  }
+  doRetreatPick(best);
+}
+
+// 봇 초기 배치: 중앙 근처 빈 칸 선호 (5목 만들기 유리)
+function botDoPlace(p) {
+  if (currentPlayer() !== p || state.phase !== 'place') return;
+  // 빈 칸 중 중앙에 가까운 곳 우선
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < SIZE*SIZE; i++) {
+    const c = state.board[i];
+    if (c.owner !== -1 || c.pawn !== -1) continue;
+    const [r, cc] = rc(i);
+    const d = Math.abs(r - 3.5) + Math.abs(cc - 3.5);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  if (best < 0) return;
+  state.board[best].owner = p;
+  state.board[best].pawn = p;
+  state.pawnPos[p] = best;
+  state.placedCount++;
+  if (state.placedCount === 4) {
+    state.phase = 'play';
+    state.orderPos = 0;
+    state.turnCount = 0;
+  } else {
+    advanceTurn();
+  }
+  render();
+  pushState();
+}
+
+// 봇 이동: 두뇌로 최선의 수 → 실제 이동/전투
+function botDoMove(p) {
+  if (currentPlayer() !== p || state.phase !== 'play') return;
+  const move = botChooseMove(state.board, p, state.pawnPos, state.turnCount, state.alive);
+  if (!move) { afterAction(p); return; } // 둘 수 없으면 턴 넘김(안전장치)
+
+  if (move.capturesEnemy >= 0) {
+    // 전투 시작 (카드 뽑기는 4단계에서 봇이 자동 처리)
+    startBattle(p, move.capturesEnemy, move.dest, state.pawnPos[p]);
+  } else {
+    // 빈 칸 이동 + 점령
+    state.board[state.pawnPos[p]].pawn = -1;
+    moveePawnTo(p, move.dest);
+    afterAction(p);
+  }
 }
 
 // (직선 이동 방식은 경로 그리기로 대체됨)
@@ -1221,6 +1458,92 @@ function flashWinLine(cells, p) {
       }, k * 120);
     }
   });
+}
+
+// ===== 봇 두뇌 (강함): 현재 보드에서 최선의 이동 계산 =====
+// 한 말에서 도달 가능한 목적지들 (1~4칸, 꺾기 가능, BFS)
+// 반환: [{dest, pathLen, capturesEnemy}] — capturesEnemy>=0이면 그 자리에서 전투
+function botReachableDests(board, from, p, allowBattle) {
+  const results = [];
+  const destSeen = new Set();
+  const seen = new Set([from]);
+  let frontier = [[from, 0]];
+  while (frontier.length) {
+    const next = [];
+    for (const [pos, dist] of frontier) {
+      if (dist >= 4) continue;
+      const [r, c] = rc(pos);
+      for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nr = r+dr, nc = c+dc;
+        if (nr<0||nr>=SIZE||nc<0||nc>=SIZE) continue;
+        const ci = idx(nr, nc);
+        if (ci === from || seen.has(ci)) continue;
+        const tc = board[ci];
+        if (tc.pawn === p) continue; // 내 말 통과 불가
+        if (tc.pawn !== -1 && tc.pawn !== p) {
+          if (allowBattle && !destSeen.has(ci)) { destSeen.add(ci); results.push({ dest: ci, pathLen: dist+1, capturesEnemy: tc.pawn }); }
+          continue;
+        }
+        seen.add(ci);
+        if (!destSeen.has(ci)) { destSeen.add(ci); results.push({ dest: ci, pathLen: dist+1, capturesEnemy: -1 }); }
+        next.push([ci, dist+1]);
+      }
+    }
+    frontier = next;
+  }
+  return results;
+}
+
+// 플레이어 p가 ci 칸을 점령하면 만들어지는 최대 연속 길이
+function botLineLength(board, p, ci) {
+  const [r, c] = rc(ci);
+  const owned = (rr, cc) => rr>=0 && rr<SIZE && cc>=0 && cc<SIZE && (idx(rr,cc)===ci || board[idx(rr,cc)].owner===p);
+  let best = 1;
+  for (const [dr, dc] of [[0,1],[1,0],[1,1],[1,-1]]) {
+    let cnt = 1;
+    for (let s=1; s<5; s++) { if (owned(r+dr*s, c+dc*s)) cnt++; else break; }
+    for (let s=1; s<5; s++) { if (owned(r-dr*s, c-dc*s)) cnt++; else break; }
+    best = Math.max(best, cnt);
+  }
+  return best;
+}
+
+function botCountLand(board, p) {
+  let n = 0; for (const c of board) if (c.owner === p) n++; return n;
+}
+
+// 봇이 둘 최선의 수 (목적지) 선택
+function botChooseMove(board, p, pawnPos, turnCount, alive) {
+  const from = pawnPos[p];
+  if (from < 0) return null;
+  const allowBattle = turnCount >= 4;
+  const dests = botReachableDests(board, from, p, allowBattle);
+  if (dests.length === 0) return null;
+
+  let best = null, bestScore = -Infinity;
+  for (const d of dests) {
+    let score = 0;
+    if (d.capturesEnemy >= 0) {
+      const enemyLand = botCountLand(board, d.capturesEnemy);
+      score += 3 - enemyLand * 0.2; // 약한 적 견제 가치 (전투는 운이라 보수적)
+    } else {
+      const lineLen = botLineLength(board, p, d.dest);
+      if (lineLen >= 5) score += 1000;       // 5목 완성 최우선
+      else if (lineLen === 4) score += 50;
+      else if (lineLen === 3) score += 12;
+      else if (lineLen === 2) score += 4;
+      score += 1; // 영토 +1
+      // 적 5목 견제: 적이 먹으면 길어질 칸 선점
+      for (let e = 0; e < 4; e++) {
+        if (e === p || !alive[e]) continue;
+        const el = botLineLength(board, e, d.dest);
+        if (el >= 4) score += 30; else if (el >= 3) score += 6;
+      }
+      score -= d.pathLen * 0.3; // 멀리 가는 건 약간 페널티
+    }
+    if (score > bestScore) { bestScore = score; best = d; }
+  }
+  return best;
 }
 
 function renderWin() {
