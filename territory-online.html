@@ -144,6 +144,37 @@
         · 승자는 패자 땅 하나를 뺏어 한 바퀴 고정 · 패자는 후퇴<br>
         · 첫 한 바퀴는 전투 금지 · 승리: 5목 / 최후 생존 / 최다 영토
       </div>
+      <button class="btn-ghost" id="btn-rules" style="width:100%; margin-top:12px;">📖 자세한 규칙 보기</button>
+    </div>
+  </div>
+
+  <!-- 상세 규칙 모달 -->
+  <div id="rules-modal" style="display:none; position:fixed; inset:0; z-index:80; background:#000c; align-items:center; justify-content:center; padding:1.2rem;">
+    <div style="background:#15161f; border:1px solid #23252f; border-radius:14px; padding:1.4rem; max-width:380px; width:100%; max-height:85vh; overflow-y:auto;">
+      <h2 style="color:#34d399; margin-bottom:14px;">정복 오목 — 규칙</h2>
+      <div style="font-size:12.5px; line-height:1.75; color:#c4c2d4;">
+        <p style="color:#34d399; font-weight:700; margin-bottom:4px;">🎯 목표</p>
+        <p style="margin-bottom:12px;">8×8 판에서 4명이 영토를 넓히며 경쟁. 내 땅으로 5목을 만들거나, 최후의 생존자가 되거나, 판이 다 차면 최다 영토를 가진 사람이 승리.</p>
+
+        <p style="color:#4f8cff; font-weight:700; margin-bottom:4px;">🏁 시작</p>
+        <p style="margin-bottom:12px;">각자 말 1개를 빈 칸에 놓고 시작. 놓은 칸은 내 땅이 된다. 턴 순서는 무작위.</p>
+
+        <p style="color:#4f8cff; font-weight:700; margin-bottom:4px;">🚶 이동</p>
+        <p style="margin-bottom:12px;">자기 턴에 말을 상하좌우로 1~4칸 이동(중간에 꺾기 가능). 인접 칸을 차례로 클릭해 경로를 그리고, 마지막 칸을 다시 누르면 확정. 멈춘 칸이 빈 칸이면 내 땅이 된다.</p>
+
+        <p style="color:#ff5a6e; font-weight:700; margin-bottom:4px;">⚔ 전투</p>
+        <p style="margin-bottom:6px;">이동 경로에서 다른 사람 땅은 통과할 수 있지만, 다른 사람 <b>말</b>을 만나면 전투. 양쪽이 1~4 카드를 뽑아 높은 쪽이 승리(동점은 재추첨).</p>
+        <p style="margin-bottom:12px;">승자는 패자의 땅 하나를 빼앗고(한 바퀴 동안 고정), 패자는 자기 땅 중 하나로 후퇴. 후퇴할 땅이 없으면 탈락. 공격자가 이기면 말은 제자리에 남는다.</p>
+
+        <p style="color:#fbbf24; font-weight:700; margin-bottom:4px;">🔒 고정 · 보호</p>
+        <p style="margin-bottom:12px;">전투로 빼앗은 땅은 한 바퀴 동안 다시 뺏기지 않는다(고정). 게임 시작 첫 한 바퀴는 전투가 금지된다.</p>
+
+        <p style="color:#34d399; font-weight:700; margin-bottom:4px;">🏆 승리 조건</p>
+        <p style="margin-bottom:4px;">· 내 땅이 가로/세로/대각으로 <b>5개 연속</b></p>
+        <p style="margin-bottom:4px;">· 나만 남은 <b>최후의 생존자</b></p>
+        <p style="margin-bottom:12px;">· 빈 칸이 모두 차면 <b>최다 영토</b></p>
+      </div>
+      <button class="btn-primary" id="btn-rules-close" style="margin-top:6px;">닫기</button>
     </div>
   </div>
 
@@ -302,6 +333,13 @@ function lobbyMsg(t, type='error') {
   document.getElementById('lobby-msg').innerHTML = t ? `<div class="msg ${type}" style="margin-top:10px;">${t}</div>` : '';
 }
 
+document.getElementById('btn-rules').addEventListener('click', () => {
+  document.getElementById('rules-modal').style.display = 'flex';
+});
+document.getElementById('btn-rules-close').addEventListener('click', () => {
+  document.getElementById('rules-modal').style.display = 'none';
+});
+
 document.getElementById('btn-create').addEventListener('click', async () => {
   myName = document.getElementById('lobby-name').value.trim();
   if (!myName) { lobbyMsg('이름을 입력하세요.'); return; }
@@ -382,19 +420,61 @@ function handleRoom(data) {
   } else if (data.phase === 'playing' || (data.game && data.game.phase)) {
     // 게임 진행 중 — 서버 state 렌더 + 이탈 감지
     onGameUpdate(data);
-    showDisconnect(data.presence || {}, data.seats || {});
+    lastPresence = data.presence || {};
+    lastSeats = data.seats || {};
+    showDisconnect(lastPresence, lastSeats);
+    // 주기적 이탈 체크 시작 (업데이트가 안 와도 30초 후 탈락 처리되게)
+    if (!dcCheckTimer) {
+      dcCheckTimer = setInterval(() => {
+        if (state && state.winner === null) showDisconnect(lastPresence, lastSeats);
+      }, 5000);
+    }
   }
 }
+let lastPresence = {}, lastSeats = {}, dcCheckTimer = null;
 
-// 게임 중 연결 끊긴 플레이어 표시
+// 게임 중 연결 끊긴 플레이어 표시 + 자동 탈락 처리
+let disconnectSince = {}; // seat -> 끊긴 시각
+const DC_GRACE_MS = 30000; // 30초 유예
 function showDisconnect(pres, seats) {
+  const now = Date.now();
   const offline = [];
   for (let i = 0; i < 4; i++) {
-    if (seats[i] && pres[i] === false && state && state.alive && state.alive[i]) offline.push(state.names[i] || seats[i]);
+    const isOff = seats[i] && pres[i] === false && state && state.alive && state.alive[i];
+    if (isOff) {
+      offline.push(state.names[i] || seats[i]);
+      if (!disconnectSince[i]) disconnectSince[i] = now; // 끊긴 시각 기록
+    } else {
+      delete disconnectSince[i]; // 복귀 or 이미 탈락 → 기록 제거
+    }
   }
   const msgEl = document.getElementById('game-msg');
   if (offline.length > 0 && !state.stealMode && !state.retreatMode && !state.battle) {
-    msgEl.innerHTML = `<div class="msg warn">⚠ ${offline.join(', ')} 연결 끊김</div>`;
+    msgEl.innerHTML = `<div class="msg warn">⚠ ${offline.join(', ')} 연결 끊김 (30초 후 자동 탈락)</div>`;
+  }
+
+  // 자동 탈락: 30초 넘게 끊긴 사람을, "가장 빠른 생존+접속 좌석"이 처리 (중복 방지)
+  if (state.winner !== null) return;
+  let processor = -1;
+  for (let i = 0; i < 4; i++) {
+    if (state.alive[i] && pres[i] !== false) { processor = i; break; }
+  }
+  if (processor !== mySeat) return; // 내가 처리자가 아니면 패스
+
+  for (let i = 0; i < 4; i++) {
+    if (disconnectSince[i] && now - disconnectSince[i] >= DC_GRACE_MS && state.alive[i]) {
+      // 자동 탈락 처리 (전투/모드 중이 아닐 때만 안전하게)
+      if (state.stealMode || state.retreatMode || state.battle) continue;
+      delete disconnectSince[i];
+      eliminate(i);
+      // 탈락자가 현재 턴이면 턴 넘김
+      if (currentPlayer() === i) {
+        afterAction(i);
+      } else {
+        pushState();
+      }
+      break; // 한 번에 하나씩
+    }
   }
 }
 
@@ -448,6 +528,8 @@ function leaveRoom() {
     update(roomRef, { [`seats/${mySeat}`]: '', [`presence/${mySeat}`]: false }).catch(()=>{});
   }
   gameListener = null; roomRef = null; roomCode = ''; mySeat = -1; isHost = false;
+  if (dcCheckTimer) { clearInterval(dcCheckTimer); dcCheckTimer = null; }
+  disconnectSince = {};
   showScreen('lobby');
 }
 
