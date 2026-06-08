@@ -203,7 +203,7 @@
 
   <!-- 대기 화면 -->
   <div class="screen" id="screen-wait">
-    <div class="title">정복 오목 <span style="font-size:11px; color:#34d399; font-weight:600;">v3-botdbg</span></div>
+    <div class="title">정복 오목 <span style="font-size:11px; color:#34d399; font-weight:600;">v4-botdbg</span></div>
     <div class="card-box" style="text-align:center;">
       <h2>방 코드</h2>
       <div id="wait-code" style="font-size:34px; font-weight:800; letter-spacing:8px; color:#4f8cff; padding:0.5rem 0;">------</div>
@@ -747,6 +747,7 @@ function maybeRunBot() {
   if (state.battle) {
     const b = state.battle;
     const bothDone = b.atkCard > 0 && b.defCard > 0;
+    console.log('[봇전투] 공격'+b.attacker+'(봇:'+(botSeatsCache[b.attacker]===true)+',카드'+b.atkCard+') vs 방어'+b.defender+'(봇:'+(botSeatsCache[b.defender]===true)+',카드'+b.defCard+')');
     if (!bothDone) {
       // 봇이 공격자/방어자인데 아직 카드 안 뽑았으면 자동 선택
       if (botSeatsCache[b.attacker] === true && !(b.atkCard > 0)) {
@@ -872,8 +873,10 @@ function botDoPlace(p) {
 function botDoMove(p) {
   if (currentPlayer() !== p || state.phase !== 'play') return;
   const move = botChooseMove(state.board, p, state.pawnPos, state.turnCount, state.alive);
-  console.log('[봇'+p+'] 말위치:', state.pawnPos[p], rc(state.pawnPos[p]), '내땅수:', landCount(p), '→ 선택:', move ? rc(move.dest)+' 전투:'+move.capturesEnemy : 'null');
-  if (move && move.capturesEnemy < 0) console.log('  → 거기 두면 라인:', botLineLength(state.board, p, move.dest));
+  const dests = botReachableDests(state.board, state.pawnPos[p], p, state.turnCount >= 4);
+  const battleDests = dests.filter(d => d.capturesEnemy >= 0);
+  console.log('[봇'+p+'] turnCount:'+state.turnCount+' 전투가능:'+(state.turnCount>=4)+' 말:'+JSON.stringify(rc(state.pawnPos[p]))+' 내땅:'+landCount(p)+' | 도달가능 전투칸수:'+battleDests.length+' → 선택:'+(move?JSON.stringify(rc(move.dest))+'(전투'+move.capturesEnemy+')':'null'));
+  if (battleDests.length > 0) console.log('   공격가능 적:', battleDests.map(d => '적'+d.capturesEnemy+'@'+JSON.stringify(rc(d.dest))).join(', '));
   if (!move) { afterAction(p); return; } // 둘 수 없으면 턴 넘김(안전장치)
 
   if (move.capturesEnemy >= 0) {
