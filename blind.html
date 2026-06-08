@@ -560,6 +560,7 @@ let vsBot = false;
 // 봇 행동 스케줄러: 같은 상황(sig)은 한 번만, 새 상황은 항상 예약 실행
 let botLastSig = null;
 let botTimer = null;
+let botPollTimer = null;
 function scheduleBotAction(sig, fn, delay = 900) {
   if (botLastSig === sig) return; // 이미 이 상황 처리(예약)함
   botLastSig = sig;
@@ -573,6 +574,51 @@ function scheduleBotAction(sig, fn, delay = 900) {
 function resetBotScheduler() {
   botLastSig = null;
   if (botTimer) { clearTimeout(botTimer); botTimer = null; }
+  if (botPollTimer) { clearInterval(botPollTimer); botPollTimer = null; }
+}
+
+// 봇 폴링: 타이밍 경합으로 놓친 봇 행동을 주기적으로 복구 (3초마다)
+function startBotPolling() {
+  if (botPollTimer) return;
+  botPollTimer = setInterval(async () => {
+    if (!vsBot || !roomRef || botTimer) return; // 이미 예약된 게 있으면 패스
+    try {
+      const snap = await get(roomRef);
+      if (!snap.exists()) return;
+      const d = normalizeData(snap.val());
+      if (d.phase === 'playing' && d.currentTurn === 'p2') {
+        // 봇 차례인데 안 두고 있음 → 복구
+        botLastSig = null;
+        scheduleBotAction('poll-play:' + d.round + ':' + d.slotCount, async () => { await botPlay(); }, 300);
+      } else if (d.phase === 'reveal' && d.revealAck && !d.revealAck.p2) {
+        botLastSig = null;
+        scheduleBotAction('poll-reveal:' + d.round, async () => {
+          const s2 = await get(roomRef); if (!s2.exists()) return;
+          const c2 = normalizeData(s2.val());
+          if (c2.phase === 'reveal' && c2.revealAck && !c2.revealAck.p2) await applyRevealAck(c2, 'p2');
+        }, 300);
+      } else if (d.phase === 'roulette') {
+        if (d.loser === 'p2' && !d.rouletteResult) {
+          botLastSig = null;
+          scheduleBotAction('poll-rfire:' + d.matchNum, async () => {
+            const s2 = await get(roomRef); if (!s2.exists()) return;
+            const c2 = normalizeData(s2.val());
+            if (c2.phase === 'roulette' && c2.loser === 'p2' && !c2.rouletteResult) {
+              const ch = c2.chambers || START_CHAMBERS, bl = Math.min(BULLETS, ch);
+              await update(roomRef, { rouletteResult: (Math.floor(Math.random()*ch) < bl) ? 'fired' : 'safe' });
+            }
+          }, 300);
+        } else if (d.rouletteResult && d.rouletteAck && !d.rouletteAck.p2) {
+          botLastSig = null;
+          scheduleBotAction('poll-rack:' + d.matchNum, async () => {
+            const s2 = await get(roomRef); if (!s2.exists()) return;
+            const c2 = normalizeData(s2.val());
+            if (c2.rouletteResult && c2.rouletteAck && !c2.rouletteAck.p2) await advanceAfterRoulette(c2, c2.rouletteResult === 'fired', 'p2');
+          }, 300);
+        }
+      }
+    } catch (e) { /* 폴링 오류는 무시 (다음 주기 재시도) */ }
+  }, 3000);
 }
 document.getElementById('btn-bot').addEventListener('click', async () => {
   myName = document.getElementById('my-name').value.trim();
@@ -607,6 +653,7 @@ document.getElementById('btn-bot').addEventListener('click', async () => {
   setupPresence();
   showScreen('game');
   startGameListener();
+  startBotPolling();
 });
 
 // 방 만들기
