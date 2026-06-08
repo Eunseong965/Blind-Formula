@@ -794,7 +794,7 @@ function handleGameState(rawData) {
         if (snap.exists()) {
           const cur = normalizeData(snap.val());
           if (cur.phase === 'reveal' && cur.revealAck && !cur.revealAck.p2) {
-            await update(roomRef, { revealAck: { ...cur.revealAck, p2: true } });
+            await applyRevealAck(cur, 'p2');
           }
         }
         botActing = false;
@@ -832,7 +832,7 @@ function handleGameState(rawData) {
           if (snap.exists()) {
             const cur = normalizeData(snap.val());
             if (cur.rouletteResult && cur.rouletteAck && !cur.rouletteAck.p2) {
-              await update(roomRef, { rouletteAck: { ...cur.rouletteAck, p2: true } });
+              await advanceAfterRoulette(cur, cur.rouletteResult === 'fired', 'p2');
             }
           }
           botActing = false;
@@ -1271,36 +1271,39 @@ function renderReveal(data) {
     const btnLabel = data.round < NUM_ROUNDS ? '다음 라운드' : '최종 결과';
     ackEl.innerHTML = `<button class="btn-primary" id="btn-ack">${btnLabel} →</button>`;
     document.getElementById('btn-ack').addEventListener('click', async () => {
-      // 최신 데이터로 ack 병합 (stale 덮어쓰기/이중 전환 방지)
       const snap = await get(roomRef);
       if (!snap.exists()) return;
       const cur = normalizeData(snap.val());
       if (cur.phase !== 'reveal') return; // 이미 누군가 진행시킴
-      const newAck = { ...(cur.revealAck || {}), [myRole]: true };
-      const bothAck = newAck.p1 && newAck.p2;
-
-      if (bothAck) {
-        if (cur.round < NUM_ROUNDS) {
-          // 다음 라운드: 주인 교체 (R1·R3=p1, R2·R4=p2). 사용한 카드는 폐기되어 누적 유지됨
-          const nextRound = cur.round + 1;
-          const nextOwner = nextRound % 2 === 1 ? 'p1' : 'p2';
-          await update(roomRef, {
-            phase: 'playing',
-            round: nextRound,
-            slots: ['','','','',''],
-            slotOwner: ['','','','',''],
-            slotCount: 0,
-            roundOwner: nextOwner,
-            currentTurn: nextOwner,
-            revealAck: { p1: false, p2: false },
-          });
-        } else {
-          await update(roomRef, { phase: 'end', revealAck: { p1: false, p2: false } });
-        }
-      } else {
-        await update(roomRef, { revealAck: newAck });
-      }
+      await applyRevealAck(cur, myRole);
     });
+  }
+}
+
+// reveal 확인 처리 (사람·봇 공용): ack 병합 후 양쪽 다 되면 다음 단계로
+async function applyRevealAck(cur, who) {
+  const newAck = { ...(cur.revealAck || {}), [who]: true };
+  const bothAck = newAck.p1 && newAck.p2;
+  if (!bothAck) {
+    await update(roomRef, { revealAck: newAck });
+    return;
+  }
+  // 양쪽 확인 완료 → 다음 라운드 또는 종료
+  if (cur.round < NUM_ROUNDS) {
+    const nextRound = cur.round + 1;
+    const nextOwner = nextRound % 2 === 1 ? 'p1' : 'p2';
+    await update(roomRef, {
+      phase: 'playing',
+      round: nextRound,
+      slots: ['','','','',''],
+      slotOwner: ['','','','',''],
+      slotCount: 0,
+      roundOwner: nextOwner,
+      currentTurn: nextOwner,
+      revealAck: { p1: false, p2: false },
+    });
+  } else {
+    await update(roomRef, { phase: 'end', revealAck: { p1: false, p2: false } });
   }
 }
 
@@ -1511,20 +1514,22 @@ async function pullTrigger() {
   }, 1200);
 }
 
-async function advanceAfterRoulette(data, fired) {
+async function advanceAfterRoulette(data, fired, who) {
+  who = who || myRole;
   // 최신 데이터로 ack 병합 (동시 클릭 시 덮어쓰기 방지)
   const snap = await get(roomRef);
   if (!snap.exists()) return;
   const cur = normalizeData(snap.val());
   if (cur.phase !== 'roulette') return; // 이미 진행됨
-  const newAck = { ...(cur.rouletteAck || {}), [myRole]: true };
+  const newAck = { ...(cur.rouletteAck || {}), [who]: true };
   const bothAck = newAck.p1 && newAck.p2;
   if (!bothAck) {
     await update(roomRef, { rouletteAck: newAck });
     return;
   }
 
-  if (fired) {
+  const didFire = cur.rouletteResult === 'fired';
+  if (didFire) {
     await update(roomRef, { phase: 'dead' }); // 사망 → 종료
   } else {
     await startNextMatch(cur, true); // 생존 → 약실 1칸 감소하고 새 게임
