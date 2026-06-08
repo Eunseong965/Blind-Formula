@@ -176,7 +176,7 @@
         · 경로의 상대 땅은 통과 가능, 상대 말을 만나면 전투<br>
         · 전투는 1·2·3·4 한 세트에서 서로 다른 카드를 골라 높은 쪽 승리<br>
         · 승자는 패자 땅 하나를 뺏어 한 바퀴 고정 · 패자는 후퇴<br>
-        · 첫 한 바퀴는 전투 금지 · 승리: 5목 / 최후 생존 / 최다 영토
+        · 첫 한 바퀴는 전투 금지 · 승리: 5목 2개 / 최후 생존 / 최다 영토
       </div>
       <button class="btn-ghost" id="btn-rules" style="width:100%; margin-top:12px;">📖 자세한 규칙 보기</button>
     </div>
@@ -188,7 +188,7 @@
       <h2 style="color:#34d399; margin-bottom:14px;">정복 오목 — 규칙</h2>
       <div style="font-size:12.5px; line-height:1.75; color:#c4c2d4;">
         <p style="color:#34d399; font-weight:700; margin-bottom:4px;">🎯 목표</p>
-        <p style="margin-bottom:12px;">6×6 판에서 4명이 영토를 넓히며 경쟁. 내 땅으로 5목을 만들거나, 최후의 생존자가 되거나, 판이 다 차면 최다 영토를 가진 사람이 승리.</p>
+        <p style="margin-bottom:12px;">8×8 판에서 4명이 영토를 넓히며 경쟁. 내 땅으로 서로 다른 5목 라인 2개를 만들거나, 최후의 생존자가 되거나, 판이 다 차면 최다 영토를 가진 사람이 승리.</p>
 
         <p style="color:#4f8cff; font-weight:700; margin-bottom:4px;">🏁 시작</p>
         <p style="margin-bottom:12px;">각자 말 1개를 빈 칸에 놓고 시작. 놓은 칸은 내 땅이 된다. 턴 순서는 무작위.</p>
@@ -204,7 +204,7 @@
         <p style="margin-bottom:12px;">전투로 빼앗은 땅은 한 바퀴 동안 다시 뺏기지 않는다(고정). 게임 시작 첫 한 바퀴는 전투가 금지된다.</p>
 
         <p style="color:#34d399; font-weight:700; margin-bottom:4px;">🏆 승리 조건</p>
-        <p style="margin-bottom:4px;">· 내 땅이 가로/세로/대각으로 <b>5개 연속</b></p>
+        <p style="margin-bottom:4px;">· 내 땅으로 <b>5목 라인 2개</b> 완성 (가로/세로/대각, 서로 다른 라인)</p>
         <p style="margin-bottom:4px;">· 나만 남은 <b>최후의 생존자</b></p>
         <p style="margin-bottom:12px;">· 빈 칸이 모두 차면 <b>최다 영토</b></p>
       </div>
@@ -1522,29 +1522,43 @@ function advanceTurn() {
   } while (!state.alive[state.order[state.orderPos]] && guard < 8);
 }
 
-// 5목 판정: actingPlayer의 땅이 가로/세로/대각 5연속인지
+// 승리 판정: actingPlayer가 서로 다른 5목 라인 2개를 완성했는지
 function checkOmok(p) {
   const owned = (r, c) => r>=0 && r<SIZE && c>=0 && c<SIZE && state.board[idx(r,c)].owner === p;
   const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  // 모든 5목 라인을 찾아 "정규화된 라인"으로 수집 (한 직선의 연장은 1개로 통합)
+  // 라인 식별: 방향 + 그 직선이 지나는 기준선 (같은 직선·방향이면 같은 라인으로 봄)
+  const lineMap = new Map(); // key -> 그 라인의 칸들(최장)
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
-      if (!owned(r,c)) continue;
-      for (const [dr,dc] of dirs) {
+      if (!owned(r, c)) continue;
+      for (const [dr, dc] of dirs) {
+        // 이 칸이 (dr,dc) 방향 연속의 시작점일 때만 (앞칸이 내 땅 아니면 시작점)
+        if (owned(r - dr, c - dc)) continue;
         let cnt = 1;
-        while (owned(r+dr*cnt, c+dc*cnt)) cnt++;
+        while (owned(r + dr*cnt, c + dc*cnt)) cnt++;
         if (cnt >= 5) {
-          // 5목을 이룬 칸들 기록 (연출용)
+          // 같은 직선·방향은 하나로: 방향 + 시작점으로 키
+          const key = dr + ',' + dc + ',' + r + ',' + c;
           const cells = [];
-          for (let k = 0; k < cnt; k++) cells.push(idx(r+dr*k, c+dc*k));
-          state.winLine = cells;
-          state.winner = p;
-          state.winReason = '5목 완성';
-          render();
-          flashWinLine(cells, p); // 5목 반짝 연출
-          return true;
+          for (let k = 0; k < cnt; k++) cells.push(idx(r + dr*k, c + dc*k));
+          lineMap.set(key, cells);
         }
       }
     }
+  }
+  // 서로 다른 5목 라인이 2개 이상이면 승리
+  if (lineMap.size >= 2) {
+    const allLines = [...lineMap.values()];
+    // 연출용: 두 라인의 칸들 합치기 (중복 제거)
+    const cellSet = new Set();
+    allLines.forEach(line => line.forEach(ci => cellSet.add(ci)));
+    state.winLine = [...cellSet];
+    state.winner = p;
+    state.winReason = '5목 2개 완성';
+    render();
+    flashWinLine(state.winLine, p);
+    return true;
   }
   return false;
 }
