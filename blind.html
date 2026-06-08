@@ -1280,17 +1280,21 @@ function renderReveal(data) {
   }
 }
 
-// reveal 확인 처리 (사람·봇 공용): ack 병합 후 양쪽 다 되면 다음 단계로
+// reveal 확인 처리 (사람·봇 공용): 내 ack만 기록 후, 최신 상태로 양쪽 확인됐는지 판정
 async function applyRevealAck(cur, who) {
-  const newAck = { ...(cur.revealAck || {}), [who]: true };
-  const bothAck = newAck.p1 && newAck.p2;
-  if (!bothAck) {
-    await update(roomRef, { revealAck: newAck });
-    return;
-  }
+  // 1) 내 ack만 개별 경로로 기록 (상대 ack를 덮어쓰지 않음)
+  await update(roomRef, { [`revealAck/${who}`]: true });
+
+  // 2) 최신 데이터 다시 읽어 양쪽 확인 여부 판정 (경합 방지)
+  const snap = await get(roomRef);
+  if (!snap.exists()) return;
+  const fresh = normalizeData(snap.val());
+  if (fresh.phase !== 'reveal') return; // 이미 누군가 넘김
+  if (!(fresh.revealAck && fresh.revealAck.p1 && fresh.revealAck.p2)) return; // 아직 한쪽만
+
   // 양쪽 확인 완료 → 다음 라운드 또는 종료
-  if (cur.round < NUM_ROUNDS) {
-    const nextRound = cur.round + 1;
+  if (fresh.round < NUM_ROUNDS) {
+    const nextRound = fresh.round + 1;
     const nextOwner = nextRound % 2 === 1 ? 'p1' : 'p2';
     await update(roomRef, {
       phase: 'playing',
@@ -1516,17 +1520,15 @@ async function pullTrigger() {
 
 async function advanceAfterRoulette(data, fired, who) {
   who = who || myRole;
-  // 최신 데이터로 ack 병합 (동시 클릭 시 덮어쓰기 방지)
+  // 1) 내 ack만 개별 경로로 기록 (상대 ack 안 덮어씀)
+  await update(roomRef, { [`rouletteAck/${who}`]: true });
+
+  // 2) 최신 상태로 양쪽 확인 판정 (경합 방지)
   const snap = await get(roomRef);
   if (!snap.exists()) return;
   const cur = normalizeData(snap.val());
   if (cur.phase !== 'roulette') return; // 이미 진행됨
-  const newAck = { ...(cur.rouletteAck || {}), [who]: true };
-  const bothAck = newAck.p1 && newAck.p2;
-  if (!bothAck) {
-    await update(roomRef, { rouletteAck: newAck });
-    return;
-  }
+  if (!(cur.rouletteAck && cur.rouletteAck.p1 && cur.rouletteAck.p2)) return; // 아직 한쪽
 
   const didFire = cur.rouletteResult === 'fired';
   if (didFire) {
