@@ -857,7 +857,7 @@ function renderGuess() {
       <div class="guess-field"><div class="glabel">성별</div><div class="guess-opts">${optBtns('gender', GENDERS)}</div></div>
       <div class="guess-field"><div class="glabel">나이</div><div class="guess-opts">${optBtns('age', AGES.map(a=>a+'세'), AGES)}</div></div>
       <div class="guess-field"><div class="glabel">보석</div><div class="guess-opts">${optBtns('gem', GEMS)}</div></div>
-      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b), [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b))}</div></div>
+      <div class="guess-field"><div class="glabel">시크릿 넘버 (1~64)</div><input type="number" id="secret-input" min="1" max="64" placeholder="1~64 입력" style="width:100%; padding:9px 12px; border-radius:9px; border:1px solid #2a2740; background:#0e0d15; color:#e6e4f0; font-size:15px; font-family:inherit;"></div>
       <button class="btn-primary" id="btn-submit-guess">추리 제출</button>
       <div id="guess-result"></div>`;
   } else {
@@ -874,7 +874,7 @@ function renderGuess() {
       <div class="guess-field"><div class="glabel">성별</div><div class="guess-opts">${optBtns('gender', GENDERS)}</div></div>
       <div class="guess-field"><div class="glabel">나이</div><div class="guess-opts">${optBtns('age', AGES.map(a=>a+'세'), AGES)}</div></div>
       <div class="guess-field"><div class="glabel">보석</div><div class="guess-opts">${optBtns('gem', GEMS)}</div></div>
-      <div class="guess-field"><div class="glabel">시크릿 넘버</div><div class="guess-opts">${optBtns('secret', [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b), [...new Set(gameCache.students.map(s=>s.secret))].sort((a,b)=>a-b))}</div></div>
+      <div class="guess-field"><div class="glabel">시크릿 넘버 (1~64)</div><input type="number" id="secret-input" min="1" max="64" placeholder="1~64 입력" style="width:100%; padding:9px 12px; border-radius:9px; border:1px solid #2a2740; background:#0e0d15; color:#e6e4f0; font-size:15px; font-family:inherit;"></div>
       <button class="btn-primary" id="btn-submit-guess">감염 시도</button>
       <div id="guess-result"></div>`;
   }
@@ -900,7 +900,16 @@ function optBtns(field, labels, values) {
 
 async function submitGuess() {
   const role = myRoleCache.role;
-  const need = role === 'student' ? ['seat','gender','age','gem','secret'] : ['seat','person','gender','age','gem','secret'];
+  // 시크릿은 입력칸에서 읽기 (버튼 아님)
+  const secInput = document.getElementById('secret-input');
+  const secVal = parseInt(secInput ? secInput.value : '');
+  if (!Number.isInteger(secVal) || secVal < 1 || secVal > 64) {
+    document.getElementById('guess-result').innerHTML = `<div class="msg error">시크릿 넘버를 1~64 사이로 입력하세요.</div>`;
+    return;
+  }
+  guessSel.secret = secVal;
+
+  const need = role === 'student' ? ['seat','gender','age','gem'] : ['seat','person','gender','age','gem'];
   for (const f of need) {
     if (guessSel[f] === undefined) {
       document.getElementById('guess-result').innerHTML = `<div class="msg error">모든 항목을 선택하세요.</div>`;
@@ -930,14 +939,16 @@ async function submitGuess() {
     if (guessSel.gender === dProf.gender) correct++;
     if (parseInt(guessSel.age) === dProf.age) correct++;
     if (guessSel.gem === dProf.gem) correct++;
-    if (parseInt(guessSel.secret) === dProf.secret) correct++;
+    const mySecret = parseInt(guessSel.secret);
+    if (mySecret === dProf.secret) correct++;
+    const secretHint = secretHintText(mySecret, dProf.secret);
 
     if (correct === 5) {
       // 학생팀 즉시 승리
       await update(roomRef, { phase: 'end', 'game/winner': 'students', 'game/winnerBy': mySeat });
     } else {
-      showFeedback(correct, 5);
-      // 제출 기록 (5단계에서 라운드 종료 판정에 사용)
+      showFeedback(correct, 5, '', secretHint);
+      // 제출 기록 (라운드 종료 판정에 사용)
       await update(roomRef, { [`game/submitted/${mySeat}`]: { correct, round: g.round } });
     }
   } else {
@@ -945,32 +956,43 @@ async function submitGuess() {
     const targetSeat = parseInt(guessSel.seat);
     const targetRole = g.roles[targetSeat];
     let correct = 0, isStudent = (targetRole.role === 'student');
+    let secretHint = '';
     if (isStudent) {
       const s = g.students[targetRole.studentIdx];
       if (parseInt(guessSel.person) === targetRole.studentIdx) correct++;
       if (guessSel.gender === s.gender) correct++;
       if (parseInt(guessSel.age) === s.age) correct++;
       if (guessSel.gem === s.gem) correct++;
-      if (parseInt(guessSel.secret) === s.secret) correct++;
+      const mySecret = parseInt(guessSel.secret);
+      if (mySecret === s.secret) correct++;
+      secretHint = secretHintText(mySecret, s.secret);
     }
     const success = isStudent && correct === 5;
     if (success) {
-      // 감염 성공 → 5단계에서 처리 (일단 기록)
+      // 감염 성공
       await update(roomRef, { [`game/infect`]: { target: targetSeat, by: mySeat, round: g.round } });
       showFeedback(5, 5, '감염 성공! ' + seatNames[targetSeat] + '이(가) 도플갱어화됩니다.');
     } else {
-      showFeedback(correct, 5, isStudent ? '감염 실패.' : '그 좌석은 학생이 아닙니다.');
+      showFeedback(correct, 5, isStudent ? '감염 실패.' : '그 좌석은 학생이 아닙니다.', isStudent ? secretHint : '');
     }
   }
 }
 
-function showFeedback(correct, total, extra) {
+// 시크릿 업/다운 힌트 텍스트
+function secretHintText(guess, answer) {
+  if (guess === answer) return '✓ 시크릿 넘버 정답!';
+  if (guess < answer) return `🔼 시크릿은 ${guess}보다 <b>높습니다</b>`;
+  return `🔽 시크릿은 ${guess}보다 <b>낮습니다</b>`;
+}
+
+function showFeedback(correct, total, extra, secretHint) {
   document.getElementById('guess-result').innerHTML = `
     <div class="feedback-box" style="margin-top:1rem;">
       <div class="feedback-num">${correct} / ${total}</div>
       <div class="feedback-sub">${correct}개 항목이 맞았습니다${extra ? '<br>'+extra : ''}</div>
     </div>
-    <div class="msg info">어떤 항목이 맞았는지는 알려주지 않습니다. 다음 라운드에 더 정교하게 추리하세요.</div>`;
+    ${secretHint ? `<div class="msg warn">${secretHint}</div>` : ''}
+    <div class="msg info">시크릿 외 어떤 항목이 맞았는지는 알려주지 않습니다. 다음 라운드에 더 정교하게 추리하세요.</div>`;
   document.getElementById('btn-submit-guess').style.display = 'none';
 }
 
